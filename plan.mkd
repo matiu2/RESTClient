@@ -1,0 +1,39 @@
+# Plan
+
+## Goal
+
+To provide an asynchronous RESTful api client, that allows synchronous programming through the power of boost coroutines.
+
+## Overview
+
+There will be several layer; bottom to top
+
+ * boost asio
+ * https (wraps boost asio)
+ * rest (wraps https)
+
+## bost::asio
+
+This will be used for the event loop and 'add_corountine'. We'll probably wrap it to allow adding of a coroutine with an https client.
+
+## https layer
+
+https provides methods like:
+
+ * add_header
+ * post(body)
+ * read_some - read whatever's available into a buffer (fake synchronously)
+ * read_generator - single pass buffer yielder, could be passed to a json parser
+ * write_some - 
+ * body = get
+ * body = put
+
+## REST layer
+
+REST, where you define a resource, for example 'servers', then you get cool stuff like:
+
+ * list
+ * get
+ * put(id)
+ * post(id)
+ * delete(id)
