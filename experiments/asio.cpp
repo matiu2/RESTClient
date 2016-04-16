@@ -6,51 +6,16 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/buffered_read_stream.hpp>
 #include <iostream>
 #include <memory>
+#include <iterator>
+#include <iostream>
 
 namespace a = boost::asio;
 using namespace boost::asio::ip; // to get 'tcp::'
 
-class session : public std::enable_shared_from_this<session> {
-public:
-  explicit session(tcp::socket socket)
-      : socket_(std::move(socket)), timer_(socket_.get_io_service()),
-        strand_(socket_.get_io_service()) {}
-
-  void go() {
-    auto self(shared_from_this());
-    spawn(strand_, [this, self](a::yield_context yield) {
-      try {
-        char data[128];
-        for (;;) {
-          timer_.expires_from_now(std::chrono::seconds(10));
-          std::size_t n =
-              socket_.async_read_some(a::buffer(data), yield);
-          a::async_write(socket_, a::buffer(data, n),
-                                   yield);
-        }
-      } catch (std::exception &e) {
-        socket_.close();
-        timer_.cancel();
-      }
-    });
-
-    a::spawn(strand_, [this, self](a::yield_context yield) {
-      while (socket_.is_open()) {
-        boost::system::error_code ignored_ec;
-        timer_.async_wait(yield[ignored_ec]);
-        if (timer_.expires_from_now() <= std::chrono::seconds(0))
-          socket_.close();
-      }
-    });
-  }
-
-private:
-  tcp::socket socket_;
-  a::steady_timer timer_;
-  a::io_service::strand strand_;
-};
 
 int main(int argc, char *argv[]) {
   try {
@@ -62,6 +27,17 @@ int main(int argc, char *argv[]) {
       auto endpoint = resolver.async_resolve({"httpbin.org", "http"}, yield);
       tcp::socket socket(io_service);
       a::async_connect(socket, endpoint, yield);
+      std::string request("GET / HTTP/1.1\r\n"
+                          "Accept: */*\r\n"
+                          "Accept-Encoding: gzip, deflate\r\n\r\n");
+      a:async_write(socket, a::buffer(request), yield);
+      // Now get the response
+      std::array<char, 128> buf;
+      int bytes = a::async_read(socket, a::buffer(buf), yield); 
+      using namespace std;
+      cout << "Got this: ";
+      std::copy(buf.begin(), buf.end(), std::ostream_iterator<char>(cout));
+      cout << endl;
     });
 
     io_service.run();
