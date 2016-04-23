@@ -19,6 +19,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -fstandalone-debug -fwritable-strings -fno-bui
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
 
 option(BUILD_TESTS "Build the test suite" OFF)
+option(HTTP_ON_STD_OUT "Copy HTTP sent and received to stdout" OFF)
 
 FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS system coroutine)
 FIND_PACKAGE(OpenSSL REQUIRED)
@@ -28,6 +29,10 @@ include_directories(${OPENSSL_INCLUDE_DIR} ${OPENSSL_LIBRARIES})
 if (${BUILD_TESTS})
   enable_testing()
 endif(${BUILD_TESTS})
+
+if (${HTTP_ON_STD_OUT})
+  add_definitions(-DHTTP_ON_STD_OUT)
+endif()
 
 add_subdirectory(src)
 add_subdirectory(experiments)
