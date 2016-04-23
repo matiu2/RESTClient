@@ -8,8 +8,7 @@ using namespace boost::asio::ip; // to get 'tcp::'
 void testHTTPGet(asio::io_service& io_service, tcp::resolver& resolver, asio::yield_context yield) {
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, false);
   RESTClient::HTTPResponse response = server.get("/get");
-  using namespace std;
-  cout << "Got the body: " << response.body << endl;
+  assert(response.body.empty());
 }
 
 int main(int argc, char *argv[]) {
