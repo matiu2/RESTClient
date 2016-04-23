@@ -1,5 +1,7 @@
 #include "HTTP.hpp"
 
+#include <sstream>
+
 #include <boost/asio/connect.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/asio/read_until.hpp>
@@ -10,7 +12,9 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/range/istream_range.hpp>
 
-#include <sstream>
+#include <boost/asio/ssl/rfc2818_verification.hpp>
+
+
 #ifdef HTTP_ON_STD_OUT
 #include <iostream>
 #endif
@@ -19,22 +23,23 @@ namespace RESTClient {
 
 const char* endl("\r\n");
 
+template <typename Connection>
 struct TCPReader {
-  tcp::socket &socket;
+  Connection &connection;
   asio::yield_context &yield;
   asio::streambuf buf;
   std::istream data;
-  TCPReader(tcp::socket &socket, asio::yield_context &yield)
-      : socket(socket), yield(yield), buf(), data(&buf) {}
+  TCPReader(Connection &connection, asio::yield_context &yield)
+      : connection(connection), yield(yield), buf(), data(&buf) {}
   void line(std::string& result) {
-    asio::async_read_until(socket, buf, "\n", yield);
+    asio::async_read_until(connection, buf, "\n", yield);
     getline(data, result);
     #ifdef HTTP_ON_STD_OUT
     std::cout << endl << " < " << result << endl << std::flush;
     #endif
   }
   template <typename T> void word(T &result) {
-    asio::async_read_until(socket, buf, " ", yield);
+    asio::async_read_until(connection, buf, " ", yield);
     data >> result;
     #ifdef HTTP_ON_STD_OUT
     std::cout << endl << " < " << result << ' ' << std::flush;
@@ -52,11 +57,13 @@ struct TCPReader {
     std::cout << endl << " < " << body << std::flush;
     #endif
   };
-  int waitForMoreBody() { return asio::async_read(socket, buf, yield); }
+  int waitForMoreBody() { return asio::async_read(connection, buf, yield); }
 };
 
-HTTPResponse readHTTPReply(tcp::socket &socket, asio::yield_context &yield) {
-  TCPReader reader(socket, yield);
+template <typename T>
+HTTPResponse readHTTPReply(T &connection, std::function<bool(void)> is_open,
+                           asio::yield_context &yield) {
+  TCPReader<T> reader(connection, yield);
   // Get the response
   HTTPResponse result;
   unsigned int contentLength = 0;
@@ -138,7 +145,7 @@ HTTPResponse readHTTPReply(tcp::socket &socket, asio::yield_context &yield) {
     // can
     // TODO: This will be 'chunked reading'
     reader.readAvailableBody(result.body);
-    while (socket.is_open()) {
+    while (is_open()) {
       // Read whatever's available
       reader.waitForMoreBody();
       // Copy that into the body
@@ -159,20 +166,50 @@ std::string HTTPError::lookupCode(int code) {
 }
 
 HTTP::HTTP(std::string hostName, asio::io_service &io_service,
-           tcp::resolver &resolver, asio::yield_context yield, bool ssl)
+           tcp::resolver &resolver, asio::yield_context yield, bool is_ssl)
     : hostName(hostName), io_service(io_service), resolver(resolver),
-      yield(yield), socket(io_service), ssl(ssl) {}
+      yield(yield), is_ssl(is_ssl), ssl_context(ssl::context::sslv23),
+      sslStream(io_service, ssl_context), socket(io_service) {
+  ssl_context.set_default_verify_paths();
+  sslStream.set_verify_mode(ssl::verify_peer);
+  sslStream.set_verify_callback(ssl::rfc2818_verification(hostName));
+}
 
-HTTP::~HTTP() { socket.close(); }
+HTTP::~HTTP() {
+  if (socket.is_open()) {
+    socket.close();
+  }
+  if (sslStream.lowest_layer().is_open()) {
+    boost::system::error_code ec;
+    sslStream.async_shutdown(yield[ec]);
+    sslStream.lowest_layer().close();
+    // Short read is not a real error. Everything else is.
+    if (ec.category() != asio::error::get_ssl_category() ||
+        ec.value()    != ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ))
+      throw boost::system::system_error(ec);
+  }
+}
 
-HTTPResponse HTTP::get(const std::string path) {
+void HTTP::ensureConnection() {
   // Resolve if needed
   if (endpoints == decltype(endpoints)())
     endpoints =
-        resolver.async_resolve({hostName, ssl ? "https" : "http"}, yield);
+        resolver.async_resolve({hostName, is_ssl ? "https" : "http"}, yield);
   // Connect if needed
-  if (!socket.is_open())
-    asio::async_connect(socket, endpoints, yield);
+  if (is_ssl) {
+    if (!sslStream.lowest_layer().is_open()) {
+      asio::async_connect(sslStream.lowest_layer(), endpoints, yield);
+      // Perform SSL handshake and verify the remote host's
+      // certificate.
+      sslStream.async_handshake(decltype(sslStream)::client, yield);
+    }
+  } else {
+    if (!socket.is_open())
+      asio::async_connect(socket, endpoints, yield);
+  }
+}
+
+HTTPResponse HTTP::get(const std::string path) {
   std::stringstream request;
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   request << "GET " << path << " HTTP/1.1" << endl;
@@ -184,8 +221,16 @@ HTTPResponse HTTP::get(const std::string path) {
   #ifdef HTTP_ON_STD_OUT
   cout << endl << "> " << request.str();
   #endif
-  asio::async_write(socket, asio::buffer(request.str()), yield);
-  return readHTTPReply(socket, yield);
+  ensureConnection();
+  if (is_ssl) {
+    asio::async_write(sslStream, asio::buffer(request.str()), yield);
+    return readHTTPReply(
+        sslStream, [this]() { return sslStream.lowest_layer().is_open(); },
+        yield);
+  } else {
+    asio::async_write(socket, asio::buffer(request.str()), yield);
+    return readHTTPReply(socket, [this]() { return socket.is_open(); }, yield);
+  }
 }
 
 //HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath);

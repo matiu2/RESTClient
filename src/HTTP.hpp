@@ -4,6 +4,9 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/spawn.hpp>
 
+#include <boost/asio/ssl/context.hpp>
+#include <boost/asio/ssl/stream.hpp>
+
 namespace RESTClient {
 
 /// Response from an HTTP request
@@ -26,6 +29,7 @@ public:
 
 using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
+namespace ssl = boost::asio::ssl;
 
 // Handle an HTTP connection
 class HTTP {
@@ -34,13 +38,18 @@ private:
   asio::io_service &io_service;
   tcp::resolver &resolver;
   asio::yield_context yield;
+  bool is_ssl;
+  ssl::context ssl_context;
+  ssl::stream<tcp::socket> sslStream;
   tcp::socket socket;
-  bool ssl;
   tcp::resolver::iterator endpoints;
+  void ensureConnection();
+
 public:
   HTTP(std::string hostName, asio::io_service &io_service,
-       tcp::resolver &resolver, asio::yield_context yield, bool ssl = true);
+       tcp::resolver &resolver, asio::yield_context yield, bool is_ssl=true);
   ~HTTP();
+
   // Get a resource from the server. Path is the part after the URL.
   // eg. get("/person/1"); would get http://httpbin.org/person/1
   HTTPResponse get(const std::string path);
@@ -52,5 +61,4 @@ public:
   HTTPResponse patch(const std::string path, std::string data);
 };
 
-  
 } /* HTTP */
