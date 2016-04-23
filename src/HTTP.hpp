@@ -18,7 +18,9 @@ class HTTPError : public std::runtime_error {
 private:
   static std::string lookupCode(int code);
 public:
-  HTTPError(int code) : std::runtime_error(lookupCode(code)), code(code) {}
+  HTTPError(int code, std::string msg = "")
+      : std::runtime_error(lookupCode(code) + (msg.empty() ? "" : (" - " + msg))),
+        code(code) {}
   int code;
 };
 

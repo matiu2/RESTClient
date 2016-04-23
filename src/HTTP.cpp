@@ -29,10 +29,16 @@ struct TCPReader {
   void line(std::string& result) {
     asio::async_read_until(socket, buf, "\n", yield);
     getline(data, result);
+    #ifdef HTTP_ON_STD_OUT
+    std::cout << endl << " < " << result << endl << std::flush;
+    #endif
   }
   template <typename T> void word(T &result) {
     asio::async_read_until(socket, buf, " ", yield);
     data >> result;
+    #ifdef HTTP_ON_STD_OUT
+    std::cout << endl << " < " << result << ' ' << std::flush;
+    #endif
   }
   int readAvailableBody(std::string& body) {
     // Fills our result.body with what ever's in the buffer
@@ -42,6 +48,9 @@ struct TCPReader {
     body.reserve(body.size() + buf.in_avail());
     std::copy(start, end, std::back_inserter(body));
     return bytesRead;
+    #ifdef HTTP_ON_STD_OUT
+    std::cout << endl << " < " << body << std::flush;
+    #endif
   };
   int waitForMoreBody() { return asio::async_read(socket, buf, yield); }
 };
@@ -65,8 +74,10 @@ HTTPResponse readHTTPReply(tcp::socket &socket, asio::yield_context &yield) {
   reader.word(result.http_code);
   // Read OK
   reader.word(input);
-  if (input != "OK")
-    throw HTTPError(result.http_code);
+  if (input != "OK") {
+    reader.readAvailableBody(input);
+    throw HTTPError(result.http_code, input);
+  }
   // Second line should be empty
   reader.line(input);
   if (input != "\r")
@@ -171,7 +182,7 @@ HTTPResponse HTTP::get(const std::string path) {
   request << endl;
   using namespace std;
   #ifdef HTTP_ON_STD_OUT
-  cout << request.str();
+  cout << endl << "> " << request.str();
   #endif
   asio::async_write(socket, asio::buffer(request.str()), yield);
   return readHTTPReply(socket, yield);
