@@ -2,18 +2,23 @@
 
 #include <sstream>
 
+#include <boost/asio/completion_condition.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/streambuf.hpp>
-#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <boost/range/iterator_range.hpp>
+#include <boost/range/algorithm/search.hpp>
+#include <boost/range/algorithm/copy.hpp>
+#include <boost/range/istream_range.hpp>
+#include <boost/algorithm/cxx11/copy_n.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/range/istream_range.hpp>
 
 #include <boost/asio/ssl/rfc2818_verification.hpp>
-
 
 #ifdef HTTP_ON_STD_OUT
 #include <iostream>
@@ -21,74 +26,131 @@
 
 namespace RESTClient {
 
+// This is the end line used in the HTTP protocol
 const char* endl("\r\n");
 
-template <typename Connection>
-struct TCPReader {
+template <typename Connection> struct TCPReader {
+private:
   Connection &connection;
   asio::yield_context &yield;
   asio::streambuf buf;
   std::istream data;
+  int findLine() {
+      std::istreambuf_iterator<char> i(&buf);
+      std::istreambuf_iterator<char> end;
+      int result = 0;
+      // This iterator lags one behind i, to return the point where \r is
+      while (i != end) {
+        if (*(i++) == '\r')
+          if ((i != end) && (*i == '\n'))
+            return result;
+        ++result;
+      }
+      return -1;
+  }
+public:
   TCPReader(Connection &connection, asio::yield_context &yield)
-      : connection(connection), yield(yield), buf(), data(&buf) {}
-  void line(std::string& result) {
+      : connection(connection), yield(yield), buf(), data(&buf) {
+    //data.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+  }
+  void line(std::string &result) {
+  beginning:
     asio::async_read_until(connection, buf, "\n", yield);
-    getline(data, result);
-    #ifdef HTTP_ON_STD_OUT
-    std::cout << endl << " < " << result << endl << std::flush;
-    #endif
+    std::getline(data, result);
+    boost::trim(result);
+#ifdef HTTP_ON_STD_OUT
+    std::cout << std::endl << " < " << result << std::endl << std::flush;
+#endif
   }
-  template <typename T> void word(T &result) {
-    asio::async_read_until(connection, buf, " ", yield);
-    data >> result;
-    #ifdef HTTP_ON_STD_OUT
-    std::cout << endl << " < " << result << ' ' << std::flush;
-    #endif
-  }
-  int readAvailableBody(std::string& body) {
+  void readAvailableBody(std::string &body) {
     // Fills our result.body with what ever's in the buffer
-    auto start = std::istreambuf_iterator<char>(&buf);
-    decltype(start) end;
-    int bytesRead = buf.in_avail();
-    body.reserve(body.size() + buf.in_avail());
-    std::copy(start, end, std::back_inserter(body));
-    return bytesRead;
-    #ifdef HTTP_ON_STD_OUT
-    std::cout << endl << " < " << body << std::flush;
-    #endif
+    boost::copy(boost::istream_range<char>(data), std::back_inserter(body));
+#ifdef HTTP_ON_STD_OUT
+    std::cout << std::endl << " < " << body << std::flush;
+#endif
   };
-  int waitForMoreBody() { return asio::async_read(connection, buf, yield); }
+  void readNBytes(std::string &body, size_t toRead) {
+    body.reserve(body.size() + toRead);
+    size_t available = buf.in_avail();
+    if (available >= toRead) {
+      boost::algorithm::copy_n(std::istream_iterator<char>(data), toRead,
+                               std::back_inserter(body));
+      return;
+    } else {
+      size_t startLen = body.size();
+      boost::copy(boost::istream_range<char>(data), std::back_inserter(body));
+      toRead -= body.size() - startLen;
+      // Now get the rest into the buffer and read that
+      if (toRead > 0) {
+        waitForMoreBody(toRead);
+        assert(buf.in_avail() >= toRead);
+        assert(data.good());
+        assert(!data.eof());
+        assert(!data.fail());
+        using namespace std;
+        boost::algorithm::copy_n(std::istream_iterator<char>(data), toRead,
+                                 std::back_inserter(body));
+      }
+    }
+#ifdef HTTP_ON_STD_OUT
+    std::cout << std::endl << " < " << body << std::flush;
+#endif
+  };
+  void waitForMoreBody(size_t bytes) {
+    data.seekg(0);
+    auto bufs = buf.prepare(bytes);
+    size_t bytesRead =
+        asio::async_read(connection, bufs, asio::transfer_exactly(bytes), yield);
+    assert(bytesRead == bytes);
+    buf.commit(bytesRead);
+    assert(buf.in_avail() >= bytes);
+    data.clear();
+    data.rdbuf(&buf);
+  }
 };
 
+/// Reads the first line of the HTTP reply.
+/// Returns the HTTP response/error code, and 'true' if it has 'OK' at the end
+/// of the reply.
+/// throws std::runtime_error if there aren't three words in the reply.
+std::pair<int, bool> readFirstLine(const std::string& line) {
+  // First line should be of the format: HTTP/1.1 200 OK
+  std::vector<boost::iterator_range<std::string::const_iterator>> words;
+  boost::split(words, line, boost::is_any_of(" \t"));
+  if (words.size() != 3)
+    throw std::runtime_error(
+        std::string("Expected 'HTTP/1.1 200 OK' but got '") + line + "'");
+  auto word = words.begin();
+  if (*word != std::string("HTTP/1.1"))
+    throw std::runtime_error(
+        std::string("Expected 'HTTP/1.1' in response but got: ") + line);
+  // Read the return code and 'OK'
+  ++word;
+  int code = boost::lexical_cast<int>(*word);
+  ++word;
+  bool ok = *word == std::string("OK");
+  return {code, ok};
+}
+
 template <typename T>
-HTTPResponse readHTTPReply(T &connection, std::function<bool(void)> is_open,
-                           asio::yield_context &yield) {
-  TCPReader<T> reader(connection, yield);
+HTTPResponse readHTTPReply(HTTP& http, T& connection) {
+  TCPReader<T> reader(connection, http.yield);
   // Get the response
   HTTPResponse result;
   unsigned int contentLength = 0;
   // Copy the data into a line
   bool keepAlive = true; // All http 1.1 connections are keepalive unless
                          // they contain a 'Connection: close' header
+  bool chunked = false;  // Chunked encoding (instead of contentLength)
 
   std::string input;
-  // First line should be of the format: HTTP/1.1 200 OK
-  reader.word(input); // Reads one word into input, should be HTTP/1.1
-  if (input != "HTTP/1.1")
-    throw std::runtime_error(
-        std::string("Expected 'HTTP/1.1' in response but got: ") + input);
-  // Read the return code
-  reader.word(result.http_code);
-  // Read OK
-  reader.word(input);
-  if (input != "OK") {
+  reader.line(input);
+  bool ok;
+  std::tie(result.http_code, ok) = readFirstLine(input);
+  if (!ok) {
     reader.readAvailableBody(input);
     throw HTTPError(result.http_code, input);
   }
-  // Second line should be empty
-  reader.line(input);
-  if (input != "\r")
-    throw std::runtime_error("Expected second HTTP response line to be empty");
 
   // Reads a header into key and value. Trims spaces off both sides
   std::string key;
@@ -97,60 +159,68 @@ HTTPResponse readHTTPReply(T &connection, std::function<bool(void)> is_open,
     // Get the next line
     reader.line(input);
     // If the line is empty, there are no more headers, go read the body
-    if (input != "\r")
+    if (input == "")
       return false;
-    // Check headers we care about
+    // Read the headers into key+value pairs
     auto colon = std::find(input.begin(), input.end(), ':');
     if (colon == input.end())
       throw std::runtime_error(std::string("Unable to read header (no colon): ") + input);
     key.reserve(std::distance(input.begin(), colon));
     value.reserve(std::distance(colon, input.end()));
     std::copy(input.begin(), colon, std::back_inserter(key));
-    std::copy(colon, input.end(), std::back_inserter(value));
+    std::copy(colon + 1, input.end(), std::back_inserter(value));
     boost::trim(key);
     boost::trim(value);
     return true;
   };
 
-  // Now get the rest of the headers
-  while (true) {
-    if (!readHeader())
-      break;
-    // TODO: support chunked encoding
-    if (key == "Content-Length")
-      contentLength = std::stoi(value);
-    else if (key == "Connection")
-      if (value == "close")
+  // Reads the headers into the result
+  auto readHeaders = [&]() {
+    while (true) {
+      if (!readHeader())
+        break;
+      // Check for headers we care about for the transfer
+      if (key == "Content-Length")
+        contentLength = std::stoi(value);
+      else if ((key == "Connection") && (value == "close"))
         keepAlive = false;
-    // TODO: check for gzip in response headers
-    // Store the headers
-    result.headers.emplace(std::move(key), std::move(value));
-  }
+      else if ((key == "Transfer-Encoding") && (value == "chunked"))
+        chunked = true;
+      // TODO: check for gzip in response headers
+      // Store the headers
+      result.headers.emplace(std::move(key), std::move(value));
+    }
+  };
+
+  readHeaders();
 
   // Now read the body
 
   // If we have a contentLength, read that many bytes
   if (contentLength != 0) {
     // Copy the initial buffer contents to the body
-    int bytes = 0; // We're counting body bytes now
-    bytes += reader.readAvailableBody(result.body);
-    while (bytes < contentLength) {
-      // Fill the buffer
-      bytes += reader.waitForMoreBody();
-      // Copy that into the body
-      reader.readAvailableBody(result.body);
+    reader.readNBytes(result.body, contentLength);
+  } else if (chunked) {
+    // Read the chunk size;
+    reader.line(input);
+    unsigned long chunkSize = stoul(input, 0, 16);
+    while (chunkSize != 0) {
+      // TODO: maybe read 'extended chunk' data one day
+      reader.readNBytes(result.body, chunkSize);
+      std::string emptyLine;
+      reader.readNBytes(emptyLine, 2); // Read the empty line at the end of the chunk
+      if (emptyLine != endl)
+        throw std::runtime_error("chunked encoding read error. Expected empty line.");
+      reader.line(input); // Read the next chunk header
+      chunkSize = stoul(input, 0, 16);
     }
-  } else if (!keepAlive) {
-    // No content length, but not connection keepAlive, just read whatever we
-    // can
-    // TODO: This will be 'chunked reading'
+    // Read extra headers if there are any
+    readHeaders();
+  }
+  // Close connection if that's what the server wants
+  if (!keepAlive) {
     reader.readAvailableBody(result.body);
-    while (is_open()) {
-      // Read whatever's available
-      reader.waitForMoreBody();
-      // Copy that into the body
-      reader.readAvailableBody(result.body);
-    }
+    http.close();
   }
   return result;
 }
@@ -176,18 +246,7 @@ HTTP::HTTP(std::string hostName, asio::io_service &io_service,
 }
 
 HTTP::~HTTP() {
-  if (socket.is_open()) {
-    socket.close();
-  }
-  if (sslStream.lowest_layer().is_open()) {
-    boost::system::error_code ec;
-    sslStream.async_shutdown(yield[ec]);
-    sslStream.lowest_layer().close();
-    // Short read is not a real error. Everything else is.
-    if (ec.category() != asio::error::get_ssl_category() ||
-        ec.value()    != ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ))
-      throw boost::system::system_error(ec);
-  }
+  close();
 }
 
 void HTTP::ensureConnection() {
@@ -216,20 +275,18 @@ HTTPResponse HTTP::get(const std::string path) {
   request << "Host: " << hostName << endl;
   request << "Accept: */*" << endl;
   //request << "Accept-Encoding: gzip, deflate" << endl;
+  //request << "TE: trailers" << endl;
   request << endl;
-  using namespace std;
   #ifdef HTTP_ON_STD_OUT
-  cout << endl << "> " << request.str();
+  std::cout << std::endl << "> " << request.str();
   #endif
   ensureConnection();
   if (is_ssl) {
     asio::async_write(sslStream, asio::buffer(request.str()), yield);
-    return readHTTPReply(
-        sslStream, [this]() { return sslStream.lowest_layer().is_open(); },
-        yield);
+    return readHTTPReply(*this, sslStream);
   } else {
     asio::async_write(socket, asio::buffer(request.str()), yield);
-    return readHTTPReply(socket, [this]() { return socket.is_open(); }, yield);
+    return readHTTPReply(*this, socket);
   }
 }
 
@@ -239,6 +296,28 @@ HTTPResponse HTTP::get(const std::string path) {
 //HTTPResponse HTTP::post(const std::string path, std::string data);
 //HTTPResponse HTTP::postFromFile(const std::string path, const std::string &filePath);
 //HTTPResponse HTTP::patch(const std::string path, std::string data);
+
+bool HTTP::is_open() const {
+  if (is_ssl)
+    return sslStream.lowest_layer().is_open();
+  else
+    return socket.is_open();
+}
+
+void HTTP::close() {
+  if (socket.is_open()) {
+    socket.close();
+  }
+  if (sslStream.lowest_layer().is_open()) {
+    boost::system::error_code ec;
+    sslStream.async_shutdown(yield[ec]);
+    sslStream.lowest_layer().close();
+    // Short read is not a real error. Everything else is.
+    if (ec.category() != asio::error::get_ssl_category() ||
+        ec.value() != ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ))
+      throw boost::system::system_error(ec);
+  }
+}
 
 } /* RESTClient */
 

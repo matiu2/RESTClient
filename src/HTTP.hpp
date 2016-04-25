@@ -31,9 +31,16 @@ using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
 namespace ssl = boost::asio::ssl;
 
+class HTTP;
+
+template <typename T>
+HTTPResponse readHTTPReply(HTTP& http, T& connection);
+
 // Handle an HTTP connection
 class HTTP {
 private:
+  template <typename T>
+  friend HTTPResponse readHTTPReply(HTTP& http, T& connection);
   std::string hostName;
   asio::io_service &io_service;
   tcp::resolver &resolver;
@@ -44,7 +51,6 @@ private:
   tcp::socket socket;
   tcp::resolver::iterator endpoints;
   void ensureConnection();
-
 public:
   HTTP(std::string hostName, asio::io_service &io_service,
        tcp::resolver &resolver, asio::yield_context yield, bool is_ssl=true);
@@ -59,6 +65,8 @@ public:
   HTTPResponse post(const std::string path, std::string data);
   HTTPResponse postFromFile(const std::string path, const std::string& filePath);
   HTTPResponse patch(const std::string path, std::string data);
+  bool is_open() const; // Return true if the connection is open
+  void close(); // Close the connection
 };
 
 } /* HTTP */
