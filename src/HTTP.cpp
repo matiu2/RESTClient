@@ -34,29 +34,23 @@ private:
   Connection &connection;
   asio::yield_context &yield;
   asio::streambuf buf;
-  std::istream data;
-  int findLine() {
-      std::istreambuf_iterator<char> i(&buf);
-      std::istreambuf_iterator<char> end;
-      int result = 0;
-      // This iterator lags one behind i, to return the point where \r is
-      while (i != end) {
-        if (*(i++) == '\r')
-          if ((i != end) && (*i == '\n'))
-            return result;
-        ++result;
-      }
-      return -1;
-  }
 public:
   TCPReader(Connection &connection, asio::yield_context &yield)
-      : connection(connection), yield(yield), buf(), data(&buf) {
-    //data.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+      : connection(connection), yield(yield), buf() {
   }
   void line(std::string &result) {
-  beginning:
     asio::async_read_until(connection, buf, "\n", yield);
-    std::getline(data, result);
+    size_t available = buf.in_avail();
+    size_t count = 0;
+    result.resize(0);
+    result.reserve(available);
+    while (count < available) {
+      char c = buf.sbumpc();
+      ++count;
+      result.push_back(c);
+      if (c == '\n')
+        break;
+    }
     boost::trim(result);
 #ifdef HTTP_ON_STD_OUT
     std::cout << std::endl << " < " << result << std::endl << std::flush;
@@ -64,32 +58,42 @@ public:
   }
   void readAvailableBody(std::string &body) {
     // Fills our result.body with what ever's in the buffer
-    boost::copy(boost::istream_range<char>(data), std::back_inserter(body));
+    size_t available = buf.in_avail();
+    body.reserve(body.size() + available);
+    for (size_t i = 0; i != available; ++i)
+      body.push_back(buf.sbumpc());
 #ifdef HTTP_ON_STD_OUT
     std::cout << std::endl << " < " << body << std::flush;
 #endif
   };
   void readNBytes(std::string &body, size_t toRead) {
+#ifdef HTTP_ON_STD_OUT
+    std::cout << std::endl << " < ";
+#endif
     body.reserve(body.size() + toRead);
     size_t available = buf.in_avail();
     if (available >= toRead) {
-      boost::algorithm::copy_n(std::istream_iterator<char>(data), toRead,
-                               std::back_inserter(body));
+      for (size_t i=0; i!=toRead; ++i) {
+        body.push_back(buf.sbumpc());
+#ifdef HTTP_ON_STD_OUT
+        std::cout << body.back() << std::flush;
+#endif
+      }
       return;
     } else {
       size_t startLen = body.size();
-      boost::copy(boost::istream_range<char>(data), std::back_inserter(body));
+      readAvailableBody(body);
       toRead -= body.size() - startLen;
       // Now get the rest into the buffer and read that
       if (toRead > 0) {
         waitForMoreBody(toRead);
         assert(buf.in_avail() >= toRead);
-        assert(data.good());
-        assert(!data.eof());
-        assert(!data.fail());
-        using namespace std;
-        boost::algorithm::copy_n(std::istream_iterator<char>(data), toRead,
-                                 std::back_inserter(body));
+        for (size_t i=0; i!=toRead; ++i) {
+          body.push_back(buf.sbumpc());
+#ifdef HTTP_ON_STD_OUT
+          std::cout << body.back() << std::flush;
+#endif
+        }
       }
     }
 #ifdef HTTP_ON_STD_OUT
@@ -97,15 +101,12 @@ public:
 #endif
   };
   void waitForMoreBody(size_t bytes) {
-    data.seekg(0);
     auto bufs = buf.prepare(bytes);
     size_t bytesRead =
         asio::async_read(connection, bufs, asio::transfer_exactly(bytes), yield);
     assert(bytesRead == bytes);
     buf.commit(bytesRead);
     assert(buf.in_avail() >= bytes);
-    data.clear();
-    data.rdbuf(&buf);
   }
 };
 
@@ -197,10 +198,7 @@ HTTPResponse readHTTPReply(HTTP& http, T& connection) {
   // Now read the body
 
   // If we have a contentLength, read that many bytes
-  if (contentLength != 0) {
-    // Copy the initial buffer contents to the body
-    reader.readNBytes(result.body, contentLength);
-  } else if (chunked) {
+  if (chunked) {
     // Read the chunk size;
     reader.line(input);
     unsigned long chunkSize = stoul(input, 0, 16);
@@ -216,6 +214,9 @@ HTTPResponse readHTTPReply(HTTP& http, T& connection) {
     }
     // Read extra headers if there are any
     readHeaders();
+  } else  {
+    // Copy the initial buffer contents to the body
+    reader.readNBytes(result.body, contentLength);
   }
   // Close connection if that's what the server wants
   if (!keepAlive) {
