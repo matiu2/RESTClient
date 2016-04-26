@@ -95,6 +95,14 @@ void testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
   std::cout << testName.str() << " DONE" << std::endl;
 }
 
+void testDelete(asio::io_service &io_service, tcp::resolver &resolver,
+                    bool is_ssl, asio::yield_context yield) {
+  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+  RESTClient::HTTPResponse response = server.del("/delete");
+  assert(!response.body.empty());
+}
+
+
 int main(int argc, char *argv[]) {
   asio::io_service io_service;
   tcp::resolver resolver(io_service);
@@ -106,6 +114,10 @@ int main(int argc, char *argv[]) {
     asio::spawn(io_service, std::bind(testGet, std::ref(io_service), std::ref(resolver), is_ssl, toFile, _1));
     // HTTPS chunked get
     asio::spawn(io_service, std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), is_ssl, toFile, _1));
+    // Delete (has no toFile)
+    if (!toFile) {
+      asio::spawn(io_service, std::bind(testDelete, std::ref(io_service), std::ref(resolver), is_ssl, _1));
+    }
   };
 
   // HTTP tests to string

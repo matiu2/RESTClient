@@ -331,7 +331,30 @@ HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath
   return result;
 }
 
-//HTTPResponse HTTP::del(const std::string path);
+HTTPResponse HTTP::del(const std::string path) {
+  std::stringstream request;
+  // TODO: urlencode ? parameters ? other headers ? chunked data support
+  request << "DELETE " << path << " HTTP/1.1" << endl;
+  request << "Host: " << hostName << endl;
+  request << "Accept: */*" << endl;
+  request << "Accept-Encoding: gzip, deflate" << endl;
+  request << "TE: trailers" << endl;
+  request << endl;
+  #ifdef HTTP_ON_STD_OUT
+  std::cout << std::endl << "> " << request.str();
+  #endif
+  HTTPResponse result;
+  ensureConnection();
+  if (is_ssl) {
+    asio::async_write(sslStream, asio::buffer(request.str()), yield);
+    readHTTPReply(*this, sslStream, result);
+  } else {
+    asio::async_write(socket, asio::buffer(request.str()), yield);
+    readHTTPReply(*this, socket, result);
+  }
+  return result;
+}
+
 //HTTPResponse HTTP::put(const std::string path, std::string data);
 //HTTPResponse HTTP::post(const std::string path, std::string data);
 //HTTPResponse HTTP::postFromFile(const std::string path, const std::string &filePath);
