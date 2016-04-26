@@ -9,6 +9,9 @@ using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
 
 void testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl, bool toFile, asio::yield_context yield) {
+  std::stringstream testName;
+  testName << "testGet: " << (is_ssl ? "(ssl)" : "") << (toFile ? "(toFile)" : "");
+  std::cout << testName.str() << " START" << std::endl;
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
   RESTClient::HTTPResponse response;
   if (toFile) {
@@ -31,10 +34,14 @@ void testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl,
   // Check it
   std::string shouldContain("httpbin.org/get");
   assert(boost::algorithm::contains(response.body, shouldContain));
+  std::cout << testName.str() << " DONE" << std::endl;
 }
 
 void testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
                     bool is_ssl, bool toFile, asio::yield_context yield) {
+  std::stringstream testName;
+  testName << "testChunkedGet: " << (is_ssl ? "(ssl)" : "") << (toFile ? "(toFile)" : "");
+  std::cout << testName.str() << " START" << std::endl;
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
   const int size = 1024;
   const int chunk_size = 80;
@@ -85,6 +92,7 @@ void testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
         << "=== Actual data end ===" << endl;
     throw std::runtime_error(msg.str());
   }
+  std::cout << testName.str() << " DONE" << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -97,7 +105,7 @@ int main(int argc, char *argv[]) {
     // HTTP get
     asio::spawn(io_service, std::bind(testGet, std::ref(io_service), std::ref(resolver), is_ssl, toFile, _1));
     // HTTPS chunked get
-    //asio::spawn(io_service, std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), is_ssl, toFile, _1));
+    asio::spawn(io_service, std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), is_ssl, toFile, _1));
   };
 
   // HTTP tests to string
