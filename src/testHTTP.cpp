@@ -3,13 +3,16 @@
 #include <iostream>
 #include <sstream>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
 
 void testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl, asio::yield_context yield) {
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
   RESTClient::HTTPResponse response = server.get("/get");
-  assert(response.body.empty());
+  std::string shouldContain("httpbin.org/get");
+  assert(boost::algorithm::contains(response.body, shouldContain));
 }
 
 void testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
@@ -58,7 +61,7 @@ int main(int argc, char *argv[]) {
 
   auto runTests = [&](bool is_ssl) {
     // HTTP get
-    //asio::spawn(io_service, std::bind(testGet, std::ref(io_service), std::ref(resolver), is_ssl, _1));
+    asio::spawn(io_service, std::bind(testGet, std::ref(io_service), std::ref(resolver), is_ssl, _1));
     // HTTPS chunked get
     asio::spawn(io_service, std::bind(testChunkedGet, std::ref(io_service),
                                       std::ref(resolver), is_ssl, _1));
@@ -67,7 +70,7 @@ int main(int argc, char *argv[]) {
   // HTTP tests
   runTests(false);
   // HTTPS tests
-  //runTests(false);
+  runTests(false);
   io_service.run();
   return 0;
 }
