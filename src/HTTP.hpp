@@ -7,6 +7,8 @@
 #include <boost/asio/ssl/context.hpp>
 #include <boost/asio/ssl/stream.hpp>
 
+#include <fstream>
+
 namespace RESTClient {
 
 /// Response from an HTTP request
@@ -14,6 +16,8 @@ struct HTTPResponse {
   int http_code;
   std::map<std::string, std::string> headers;
   std::string body;
+  bool bodyInFile;
+  std::fstream file;
 };
 
 /// Thrown when HTTP returns an error code
@@ -40,7 +44,7 @@ HTTPResponse readHTTPReply(HTTP& http, T& connection);
 class HTTP {
 private:
   template <typename T>
-  friend HTTPResponse readHTTPReply(HTTP& http, T& connection);
+  friend void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result);
   std::string hostName;
   asio::io_service &io_service;
   tcp::resolver &resolver;

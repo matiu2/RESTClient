@@ -134,10 +134,8 @@ std::pair<int, bool> readFirstLine(const std::string& line) {
 }
 
 template <typename T>
-HTTPResponse readHTTPReply(HTTP& http, T& connection) {
+void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
   TCPReader<T> reader(connection, http.yield);
-  // Get the response
-  HTTPResponse result;
   unsigned int contentLength = 0;
   // Copy the data into a line
   bool keepAlive = true; // All http 1.1 connections are keepalive unless
@@ -197,6 +195,8 @@ HTTPResponse readHTTPReply(HTTP& http, T& connection) {
 
   // Now read the body
 
+  std::string buffer; // Only used for saving to file
+
   // If we have a contentLength, read that many bytes
   if (chunked) {
     // Read the chunk size;
@@ -204,7 +204,12 @@ HTTPResponse readHTTPReply(HTTP& http, T& connection) {
     unsigned long chunkSize = stoul(input, 0, 16);
     while (chunkSize != 0) {
       // TODO: maybe read 'extended chunk' data one day
-      reader.readNBytes(result.body, chunkSize);
+      if (result.bodyInFile) {
+        buffer.resize(0);
+        reader.readNBytes(buffer, chunkSize);
+        result.file.write(buffer.c_str(), buffer.size());
+      } else
+        reader.readNBytes(result.body, chunkSize);
       std::string emptyLine;
       reader.readNBytes(emptyLine, 2); // Read the empty line at the end of the chunk
       if (emptyLine != endl)
@@ -216,14 +221,18 @@ HTTPResponse readHTTPReply(HTTP& http, T& connection) {
     readHeaders();
   } else  {
     // Copy the initial buffer contents to the body
-    reader.readNBytes(result.body, contentLength);
+    if (result.bodyInFile) {
+        buffer.resize(0);
+        reader.readNBytes(buffer, contentLength);
+        result.file.write(buffer.c_str(), buffer.size());
+    } else
+      reader.readNBytes(result.body, contentLength);
   }
   // Close connection if that's what the server wants
   if (!keepAlive) {
     reader.readAvailableBody(result.body);
     http.close();
   }
-  return result;
 }
 
 std::string HTTPError::lookupCode(int code) {
@@ -275,23 +284,53 @@ HTTPResponse HTTP::get(const std::string path) {
   request << "GET " << path << " HTTP/1.1" << endl;
   request << "Host: " << hostName << endl;
   request << "Accept: */*" << endl;
-  //request << "Accept-Encoding: gzip, deflate" << endl;
-  //request << "TE: trailers" << endl;
+  request << "Accept-Encoding: gzip, deflate" << endl;
+  request << "TE: trailers" << endl;
   request << endl;
   #ifdef HTTP_ON_STD_OUT
   std::cout << std::endl << "> " << request.str();
   #endif
+  HTTPResponse result;
+  result.bodyInFile = false;
   ensureConnection();
   if (is_ssl) {
     asio::async_write(sslStream, asio::buffer(request.str()), yield);
-    return readHTTPReply(*this, sslStream);
+    readHTTPReply(*this, sslStream, result);
   } else {
     asio::async_write(socket, asio::buffer(request.str()), yield);
-    return readHTTPReply(*this, socket);
+    readHTTPReply(*this, socket, result);
   }
+  return result;
 }
 
-//HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath);
+HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath) {
+  std::stringstream request;
+  // TODO: urlencode ? parameters ? other headers ? chunked data support
+  request << "GET " << serverPath << " HTTP/1.1" << endl;
+  request << "Host: " << hostName << endl;
+  request << "Accept: */*" << endl;
+  request << "Accept-Encoding: gzip, deflate" << endl;
+  request << "TE: trailers" << endl;
+  request << endl;
+  #ifdef HTTP_ON_STD_OUT
+  std::cout << std::endl << "> " << request.str();
+  #endif
+  HTTPResponse result;
+  result.bodyInFile = true;
+  result.file.open(filePath, std::ios_base::out | std::ios_base::binary);
+  if (!result.file)
+    throw std::runtime_error(std::string("Unable to open file for writing: ") + filePath);
+  ensureConnection();
+  if (is_ssl) {
+    asio::async_write(sslStream, asio::buffer(request.str()), yield);
+    readHTTPReply(*this, sslStream, result);
+  } else {
+    asio::async_write(socket, asio::buffer(request.str()), yield);
+    readHTTPReply(*this, socket, result);
+  }
+  return result;
+}
+
 //HTTPResponse HTTP::del(const std::string path);
 //HTTPResponse HTTP::put(const std::string path, std::string data);
 //HTTPResponse HTTP::post(const std::string path, std::string data);
