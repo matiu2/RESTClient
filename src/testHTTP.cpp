@@ -3,15 +3,13 @@
 #include <iostream>
 #include <sstream>
 
+#include <boost/regex.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
 using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
 
-void testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl, bool toFile, asio::yield_context yield) {
-  std::stringstream testName;
-  testName << "testGet: " << (is_ssl ? "(ssl)" : "") << (toFile ? "(toFile)" : "");
-  std::cout << testName.str() << " START" << std::endl;
+bool testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl, bool toFile, asio::yield_context yield) {
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
   RESTClient::HTTPResponse response;
   if (toFile) {
@@ -21,27 +19,18 @@ void testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl,
       fn << "-ssl";
     fn << ".json";
     response = server.getToFile("/get", fn.str());
-    assert(response.body.empty());
-    // Read it back into a string anyway
-    response.file.flush();
-    response.file.close();
-    std::fstream data(fn.str(), std::ios_base::in | std::ios_base::binary);
-    std::copy(std::istream_iterator<char>(data), std::istream_iterator<char>(),
-              std::back_inserter(response.body));
   }
   else
     response = server.get("/get");
   // Check it
   std::string shouldContain("httpbin.org/get");
-  assert(boost::algorithm::contains(response.body, shouldContain));
-  std::cout << testName.str() << " DONE" << std::endl;
+  std::string body = response.body;
+  assert(boost::algorithm::contains(body, shouldContain));
+  return true;
 }
 
-void testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
+bool testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
                     bool is_ssl, bool toFile, asio::yield_context yield) {
-  std::stringstream testName;
-  testName << "testChunkedGet: " << (is_ssl ? "(ssl)" : "") << (toFile ? "(toFile)" : "");
-  std::cout << testName.str() << " START" << std::endl;
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
   const int size = 1024;
   const int chunk_size = 80;
@@ -55,13 +44,6 @@ void testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
       fn << "-ssl";
     fn << ".json";
     response = server.getToFile(path.str(), fn.str());
-    assert(response.body.empty());
-    // Read it back into a string anyway
-    response.file.flush();
-    response.file.close();
-    std::fstream data(fn.str(), std::ios_base::in | std::ios_base::binary);
-    std::copy(std::istream_iterator<char>(data), std::istream_iterator<char>(),
-              std::back_inserter(response.body));
   } else
     response = server.get(path.str());
   // Make up the expected string
@@ -80,28 +62,31 @@ void testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
       i += toWrite;
     }
   }
-  if (expected.str() != response.body) {
+  std::string body = response.body;
+  if (expected.str() != body) {
     std::stringstream msg;
     using std::endl;
     msg << "Received body not the same as the expected body. "
         << "Expected Length: " << size << endl
-        << "Actual Length: " << response.body.size() << endl << endl
+        << "Actual Length: " << body.size() << endl << endl
         << "=== Expected data begin === " << endl << expected.str() << endl
         << "=== Expected data end ===" << endl
-        << "=== Actual data begin === " << endl << response.body << endl
+        << "=== Actual data begin === " << endl << body << endl
         << "=== Actual data end ===" << endl;
     throw std::runtime_error(msg.str());
   }
-  std::cout << testName.str() << " DONE" << std::endl;
+  return true;
 }
 
-void testDelete(asio::io_service &io_service, tcp::resolver &resolver,
+bool testDelete(asio::io_service &io_service, tcp::resolver &resolver,
                     bool is_ssl, asio::yield_context yield) {
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
   RESTClient::HTTPResponse response = server.del("/delete");
-  assert(!response.body.empty());
+  std::string shouldContain("httpbin.org/delete");
+  std::string body = response.body;
+  assert(boost::algorithm::contains(body, shouldContain));
+  return true;
 }
-
 
 int main(int argc, char *argv[]) {
   asio::io_service io_service;
@@ -109,25 +94,71 @@ int main(int argc, char *argv[]) {
 
   using namespace std::placeholders;
 
-  auto runTests = [&](bool is_ssl, bool toFile) {
-    // HTTP get
-    asio::spawn(io_service, std::bind(testGet, std::ref(io_service), std::ref(resolver), is_ssl, toFile, _1));
-    // HTTPS chunked get
-    asio::spawn(io_service, std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), is_ssl, toFile, _1));
-    // Delete (has no toFile)
-    if (!toFile) {
-      asio::spawn(io_service, std::bind(testDelete, std::ref(io_service), std::ref(resolver), is_ssl, _1));
+  std::vector<std::pair<std::string, std::function<bool(asio::yield_context)>>>
+      tests{// HTTP get
+            {"HTTP get - no ssl - no file",
+             std::bind(testGet, std::ref(io_service), std::ref(resolver), false,
+                       false, _1)},
+            {"HTTP get - no ssl - file",
+             std::bind(testGet, std::ref(io_service), std::ref(resolver), false,
+                       true, _1)},
+            {"HTTP get - ssl - no file",
+             std::bind(testGet, std::ref(io_service), std::ref(resolver), true,
+                       false, _1)},
+            {"HTTP get - ssl - file",
+             std::bind(testGet, std::ref(io_service), std::ref(resolver), true,
+                       true, _1)},
+            // HTTP chunked get
+            {"HTTP chunked - no ssl - no file",
+             std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
+                       false, false, _1)},
+            {"HTTP chunked - no ssl - file",
+             std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
+                       false, true, _1)},
+            {"HTTP chunked - ssl - no file",
+             std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
+                       true, false, _1)},
+            {"HTTP chunked - ssl - file",
+             std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
+                       true, true, _1)},
+            // Delete
+            {"DELETE - no ssl", std::bind(testDelete, std::ref(io_service),
+                                          std::ref(resolver), false, _1)},
+            {"DELETE - ssl", std::bind(testDelete, std::ref(io_service),
+                                       std::ref(resolver), false, _1)}};
+
+  auto runTest = [&](asio::yield_context yield, const std::string &name,
+                     std::function<bool(asio::yield_context)> test) {
+    using namespace std;
+    try {
+      if (test(yield))
+        cerr << "SUCCESS: " << name << endl;
+      else
+        cerr << "FAILED: " << name << endl;
+    } catch (std::exception &e) {
+      cerr << "ERROR: " << name << " - " << e.what() << endl;
     }
   };
 
-  // HTTP tests to string
-  runTests(false, false);
-  // HTTP tests to file
-  runTests(false, true);
-  // HTTPS tests to string
-  runTests(true, false);
-  // HTTPS tests to file
-  runTests(true, true);
+  // Parse args for regexes
+  std::vector<boost::regex> regexs;
+  for (int i=1; i<argc; ++i)
+    regexs.push_back(boost::regex(argv[i]));
+
+  if (regexs.size() != 0)
+    for (auto &pair : tests) {
+      for (auto &regex : regexs)
+        if (boost::regex_search(pair.first, regex)) {
+          asio::spawn(io_service, std::bind(runTest, _1, std::ref(pair.first),
+                                            std::ref(pair.second)));
+          break;
+        }
+    }
+  else
+    for (auto &pair : tests)
+      asio::spawn(io_service, std::bind(runTest, _1, std::ref(pair.first),
+                                        std::ref(pair.second)));
+
   io_service.run();
   return 0;
 }

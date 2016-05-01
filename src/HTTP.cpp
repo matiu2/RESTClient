@@ -193,9 +193,18 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
 
   readHeaders();
 
-  // Now read the body
+  std::string buffer;
 
-  std::string buffer; // Only used for saving to file
+  auto readData = [&reader, &buffer, &result](size_t n_bytes) {
+    std::string *dest = result.body.asString();
+    if (dest) {
+      reader.readNBytes(*dest, n_bytes);
+    } else {
+      buffer.resize(0);
+      reader.readNBytes(buffer, n_bytes);
+      result.body.consumeData(buffer);
+    }
+  };
 
   // If we have a contentLength, read that many bytes
   if (chunked) {
@@ -204,12 +213,7 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
     unsigned long chunkSize = stoul(input, 0, 16);
     while (chunkSize != 0) {
       // TODO: maybe read 'extended chunk' data one day
-      if (result.bodyInFile) {
-        buffer.resize(0);
-        reader.readNBytes(buffer, chunkSize);
-        result.file.write(buffer.c_str(), buffer.size());
-      } else
-        reader.readNBytes(result.body, chunkSize);
+      readData(chunkSize);
       std::string emptyLine;
       reader.readNBytes(emptyLine, 2); // Read the empty line at the end of the chunk
       if (emptyLine != endl)
@@ -221,16 +225,18 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
     readHeaders();
   } else  {
     // Copy the initial buffer contents to the body
-    if (result.bodyInFile) {
-        buffer.resize(0);
-        reader.readNBytes(buffer, contentLength);
-        result.file.write(buffer.c_str(), buffer.size());
-    } else
-      reader.readNBytes(result.body, contentLength);
+    readData(contentLength);
   }
   // Close connection if that's what the server wants
   if (!keepAlive) {
-    reader.readAvailableBody(result.body);
+    std::string* destination = result.body.asString();
+    if (destination)
+      reader.readAvailableBody(*destination);
+    else {
+      buffer.resize(0);
+      reader.readAvailableBody(buffer);
+      result.body.consumeData(buffer);
+    }
     http.close();
   }
 }
@@ -291,7 +297,6 @@ HTTPResponse HTTP::get(const std::string path) {
   std::cout << std::endl << "> " << request.str();
   #endif
   HTTPResponse result;
-  result.bodyInFile = false;
   ensureConnection();
   if (is_ssl) {
     asio::async_write(sslStream, asio::buffer(request.str()), yield);
@@ -316,10 +321,7 @@ HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath
   std::cout << std::endl << "> " << request.str();
   #endif
   HTTPResponse result;
-  result.bodyInFile = true;
-  result.file.open(filePath, std::ios_base::out | std::ios_base::binary);
-  if (!result.file)
-    throw std::runtime_error(std::string("Unable to open file for writing: ") + filePath);
+  result.body.initWithFile(filePath);
   ensureConnection();
   if (is_ssl) {
     asio::async_write(sslStream, asio::buffer(request.str()), yield);

@@ -9,16 +9,10 @@
 
 #include <fstream>
 
-namespace RESTClient {
+#include "HTTPResponse.hpp"
+#include "HTTPRequest.hpp"
 
-/// Response from an HTTP request
-struct HTTPResponse {
-  int http_code;
-  std::map<std::string, std::string> headers;
-  std::string body;
-  bool bodyInFile;
-  std::fstream file;
-};
+namespace RESTClient {
 
 /// Thrown when HTTP returns an error code
 class HTTPError : public std::runtime_error {

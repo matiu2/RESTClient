@@ -27,6 +27,7 @@ FIND_PACKAGE(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR} ${OPENSSL_LIBRARIES})
 
 if (${BUILD_TESTS})
+  FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS system coroutine regex)
   enable_testing()
 endif(${BUILD_TESTS})
 
