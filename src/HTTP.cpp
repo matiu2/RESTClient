@@ -285,7 +285,8 @@ void HTTP::ensureConnection() {
 }
 
 HTTPResponse HTTP::get(const std::string path) {
-  std::stringstream request;
+  boost::asio::streambuf buf;
+  std::iostream request(&buf);
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   request << "GET " << path << " HTTP/1.1" << endl;
   request << "Host: " << hostName << endl;
@@ -294,22 +295,26 @@ HTTPResponse HTTP::get(const std::string path) {
   request << "TE: trailers" << endl;
   request << endl;
   #ifdef HTTP_ON_STD_OUT
-  std::cout << std::endl << "> " << request.str();
+  std::cout << std::endl << "> ";
+  for (auto& part : buf.data())
+    std::cout.write(boost::asio::buffer_cast<const char *>(part),
+                    boost::asio::buffer_size(part));
   #endif
   HTTPResponse result;
   ensureConnection();
   if (is_ssl) {
-    asio::async_write(sslStream, asio::buffer(request.str()), yield);
+    asio::async_write(sslStream, buf, yield);
     readHTTPReply(*this, sslStream, result);
   } else {
-    asio::async_write(socket, asio::buffer(request.str()), yield);
+    asio::async_write(socket, buf, yield);
     readHTTPReply(*this, socket, result);
   }
   return result;
 }
 
 HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath) {
-  std::stringstream request;
+  boost::asio::streambuf buf;
+  std::ostream request(&buf);
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   request << "GET " << serverPath << " HTTP/1.1" << endl;
   request << "Host: " << hostName << endl;
@@ -318,23 +323,27 @@ HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath
   request << "TE: trailers" << endl;
   request << endl;
   #ifdef HTTP_ON_STD_OUT
-  std::cout << std::endl << "> " << request.str();
+  std::cout << std::endl << "> ";
+  for (auto& part : buf.data())
+    std::cout.write(boost::asio::buffer_cast<const char *>(part),
+                    boost::asio::buffer_size(part));
   #endif
   HTTPResponse result;
   result.body.initWithFile(filePath);
   ensureConnection();
   if (is_ssl) {
-    asio::async_write(sslStream, asio::buffer(request.str()), yield);
+    asio::async_write(sslStream, buf, yield);
     readHTTPReply(*this, sslStream, result);
   } else {
-    asio::async_write(socket, asio::buffer(request.str()), yield);
+    asio::async_write(socket, buf, yield);
     readHTTPReply(*this, socket, result);
   }
   return result;
 }
 
 HTTPResponse HTTP::del(const std::string path) {
-  std::stringstream request;
+  boost::asio::streambuf buf;
+  std::ostream request(&buf);
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   request << "DELETE " << path << " HTTP/1.1" << endl;
   request << "Host: " << hostName << endl;
@@ -343,23 +352,125 @@ HTTPResponse HTTP::del(const std::string path) {
   request << "TE: trailers" << endl;
   request << endl;
   #ifdef HTTP_ON_STD_OUT
-  std::cout << std::endl << "> " << request.str();
+  std::cout << std::endl << "> ";
+  for (auto& part : buf.data())
+    std::cout.write(boost::asio::buffer_cast<const char *>(part),
+                    boost::asio::buffer_size(part));
   #endif
   HTTPResponse result;
   ensureConnection();
   if (is_ssl) {
-    asio::async_write(sslStream, asio::buffer(request.str()), yield);
+    asio::async_write(sslStream, buf, yield);
     readHTTPReply(*this, sslStream, result);
   } else {
-    asio::async_write(socket, asio::buffer(request.str()), yield);
+    asio::async_write(socket, buf, yield);
     readHTTPReply(*this, socket, result);
   }
   return result;
 }
 
-//HTTPResponse HTTP::put(const std::string path, std::string data);
+HTTPResponse HTTP::put(const std::string path, std::string data) {
+  boost::asio::streambuf buf;
+  std::ostream request(&buf);
+  // TODO: urlencode ? parameters ? other headers ? chunked data support
+  request << "PUT " << path << " HTTP/1.1" << endl;
+  request << "Host: " << hostName << endl;
+  request << "Accept: */*" << endl;
+  request << "Accept-Encoding: gzip, deflate" << endl;
+  request << "TE: trailers" << endl;
+  request << "Content-Length: " << data.size() << endl;
+  request << endl;
+  #ifdef HTTP_ON_STD_OUT
+  std::cout << std::endl << "> ";
+  for (auto& part : buf.data())
+    std::cout.write(boost::asio::buffer_cast<const char *>(part),
+                    boost::asio::buffer_size(part));
+  #endif
+  HTTPResponse result;
+  ensureConnection();
+  if (is_ssl) {
+    asio::async_write(sslStream, buf, yield);
+    asio::async_write(sslStream, asio::buffer(data), yield);
+    readHTTPReply(*this, sslStream, result);
+  } else {
+    asio::async_write(socket, buf, yield);
+    asio::async_write(socket, asio::buffer(data), yield);
+    readHTTPReply(*this, socket, result);
+  }
+  return result;
+}
+
+template <typename T>
+void chunkedTransmit(T &transmitter, std::istream &data,
+                     asio::yield_context yield) {
+  const size_t bufferSize = 1024;
+  char buffer[bufferSize];
+  while (data.good()) {
+    size_t bytes = data.readsome(buffer, bufferSize);
+    if (bytes == 0)
+      break;
+    // Write the chunksize
+    std::stringstream chunkSize;
+    chunkSize << std::ios_base::hex << bytes << endl;
+    asio::async_write(transmitter, asio::buffer(chunkSize.str()), yield);
+    // Write the data
+    asio::async_write(transmitter, asio::buffer(buffer, bytes), yield);
+    // Write a new line
+    asio::async_write(transmitter, asio::buffer(endl, 2), yield);
+  }
+}
+
+template <typename T>
+void transmit(T &transmitter, std::istream &data, asio::yield_context yield) {
+  const size_t bufferSize = 1024;
+  char buffer[bufferSize];
+  while (data.good()) {
+    size_t bytes = data.readsome(buffer, bufferSize);
+    if (bytes == 0)
+      break;
+    asio::async_write(transmitter, asio::buffer(buffer, bytes), yield);
+  }
+}
+
+
+HTTPResponse HTTP::putStream(const std::string path, std::istream& data) {
+  boost::asio::streambuf buf;
+  std::ostream request(&buf);
+  // TODO: urlencode ? parameters ? other headers ? chunked data support
+  request << "PUT " << path << " HTTP/1.1" << endl;
+  request << "Host: " << hostName << endl;
+  request << "Accept: */*" << endl;
+  request << "Accept-Encoding: gzip, deflate" << endl;
+  request << "TE: trailers" << endl;
+  // Find the file size
+  data.seekg(0, std::istream::end);
+  long size = data.tellg();
+  data.seekg(0);
+  if (size != -1)
+    request << "Content-Length: " << size << endl;
+  request << endl;
+  #ifdef HTTP_ON_STD_OUT
+  std::cout << std::endl << "> ";
+  for (auto& part : buf.data())
+    std::cout.write(boost::asio::buffer_cast<const char *>(part),
+                    boost::asio::buffer_size(part));
+  #endif
+  HTTPResponse result;
+  ensureConnection();
+  if (is_ssl) {
+    asio::async_write(sslStream, buf, yield);
+    transmit(sslStream, data, yield);
+    readHTTPReply(*this, sslStream, result);
+  } else {
+    asio::async_write(socket, buf, yield);
+    transmit(socket, data, yield);
+    readHTTPReply(*this, socket, result);
+  }
+  return result;
+}
+
 //HTTPResponse HTTP::post(const std::string path, std::string data);
-//HTTPResponse HTTP::postFromFile(const std::string path, const std::string &filePath);
+//HTTPResponse HTTP::postStream(const std::string path, std::istream& data);
 //HTTPResponse HTTP::patch(const std::string path, std::string data);
 
 bool HTTP::is_open() const {

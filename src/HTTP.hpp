@@ -60,8 +60,9 @@ public:
   HTTPResponse getToFile(std::string serverPath, const std::string& filePath);
   HTTPResponse del(const std::string path);
   HTTPResponse put(const std::string path, std::string data);
+  HTTPResponse putStream(const std::string path, std::istream& data);
   HTTPResponse post(const std::string path, std::string data);
-  HTTPResponse postFromFile(const std::string path, const std::string& filePath);
+  HTTPResponse postStream(const std::string path, std::istream& data);
   HTTPResponse patch(const std::string path, std::string data);
   bool is_open() const; // Return true if the connection is open
   void close(); // Close the connection
