@@ -1,6 +1,6 @@
 project (src)
 
-add_library(RESTClient HTTP.cpp)
+add_library(RESTClient HTTP.cpp HTTPBody.cpp)
 target_link_libraries(RESTClient ${CPP} ${CMAKE_THREAD_LIBS_INIT} ${Boost_SYSTEM_LIBRARY} ${Boost_COROUTINE_LIBRARY} ${OPENSSL_LIBRARIES})
 
 if (${BUILD_TESTS})

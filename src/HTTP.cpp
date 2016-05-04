@@ -110,6 +110,118 @@ public:
   }
 };
 
+void HTTP::addDefaultHeaders(HTTPRequest& request) {
+  // Host
+  std::string& value = request.headers["Host"];
+  if (value.empty())
+    value = request.hostName;
+  // Accept */*
+  value = request.headers["Accept"];
+  if (value.empty())
+    value = "*/*";
+  // Accept-Encoding: gzip, deflate
+  value = request.headers["Accept-Encoding"];
+  if (value.empty())
+    value = "gzip, deflate";
+  // TE: trailers
+  value = request.headers["TE"];
+  if (value.empty())
+    value = "trailers";
+  // Content-Length
+  long size = request.body.size();
+  if (size >= 0)
+  value = request.headers["Content-Length"];
+  if (value.empty())
+    value = std::to_string(size);
+}
+
+template <typename T>
+void chunkedTransmit(T &transmitter, std::istream &data,
+                     asio::yield_context yield) {
+  // https://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.6.1
+  const size_t bufferSize = 1024;
+  char buffer[bufferSize];
+  while (data.good()) {
+    size_t bytes = data.readsome(buffer, bufferSize);
+    if (bytes == 0)
+      break;
+    // Write the chunksize
+    std::stringstream chunkSize;
+    chunkSize << std::ios_base::hex << bytes << endl;
+    asio::async_write(transmitter, asio::buffer(chunkSize.str()), yield);
+    // Write the data
+    asio::async_write(transmitter, asio::buffer(buffer, bytes), yield);
+    // Write a new line
+    asio::async_write(transmitter, asio::buffer(endl, 2), yield);
+  }
+}
+
+template <typename T>
+void transmit(T &transmitter, std::istream &data, asio::yield_context yield) {
+  const size_t bufferSize = 1024;
+  char buffer[bufferSize];
+  while (data.good()) {
+    size_t bytes = data.readsome(buffer, bufferSize);
+    if (bytes == 0)
+      break;
+    asio::async_write(transmitter, asio::buffer(buffer, bytes), yield);
+  }
+}
+
+template <typename T>
+void transmitBody(T &transmitter, HTTPRequest &request,
+                  asio::yield_context yield) {
+  switch (request.body.type()) {
+  case HTTPBody::Type::string: {
+    const std::string *body = request.body.asStringConst();
+    if (body)
+      asio::async_write(transmitter, asio::buffer(*body), yield);
+  }
+  case HTTPBody::Type::stream: {
+    std::iostream& data = request.body;
+    if (request.body.size() >= 0)
+      transmit(transmitter, data, yield);
+    else
+      chunkedTransmit(transmitter, data, yield);
+  }
+  case HTTPBody::Type::empty: {
+    return;
+  }
+  };
+}
+
+HTTPResponse HTTP::action(HTTPRequest& request) {
+  boost::asio::streambuf buf;
+  std::ostream stream(&buf);
+  addDefaultHeaders(request);
+  stream << request.verb << " " << request.path << " HTTP/1.1" << endl;
+
+  for (const auto& header : request.headers)
+    stream << header.first << ": " << header.second << endl;
+  stream << endl;
+
+  #ifdef HTTP_ON_STD_OUT
+  std::cout << std::endl << "> ";
+  for (auto& part : buf.data())
+    std::cout.write(boost::asio::buffer_cast<const char *>(part),
+                    boost::asio::buffer_size(part));
+  #endif
+
+  HTTPResponse result;
+  ensureConnection();
+
+  if (is_ssl) {
+    asio::async_write(sslStream, buf, yield);
+    transmitBody(sslStream, request, yield);
+    readHTTPReply(*this, sslStream, result);
+  } else {
+    asio::async_write(socket, buf, yield);
+    transmitBody(socket, request, yield);
+    readHTTPReply(*this, socket, result);
+  }
+  return result;
+}
+
 /// Reads the first line of the HTTP reply.
 /// Returns the HTTP response/error code, and 'true' if it has 'OK' at the end
 /// of the reply.
@@ -369,11 +481,11 @@ HTTPResponse HTTP::del(const std::string path) {
   return result;
 }
 
-HTTPResponse HTTP::put(const std::string path, std::string data) {
+HTTPResponse HTTP::PUT_OR_POST(const std::string verb, const std::string path, std::string data) {
   boost::asio::streambuf buf;
   std::ostream request(&buf);
   // TODO: urlencode ? parameters ? other headers ? chunked data support
-  request << "PUT " << path << " HTTP/1.1" << endl;
+  request << verb << " " << path << " HTTP/1.1" << endl;
   request << "Host: " << hostName << endl;
   request << "Accept: */*" << endl;
   request << "Accept-Encoding: gzip, deflate" << endl;
@@ -398,51 +510,29 @@ HTTPResponse HTTP::put(const std::string path, std::string data) {
     readHTTPReply(*this, socket, result);
   }
   return result;
+
 }
 
-template <typename T>
-void chunkedTransmit(T &transmitter, std::istream &data,
-                     asio::yield_context yield) {
-  const size_t bufferSize = 1024;
-  char buffer[bufferSize];
-  while (data.good()) {
-    size_t bytes = data.readsome(buffer, bufferSize);
-    if (bytes == 0)
-      break;
-    // Write the chunksize
-    std::stringstream chunkSize;
-    chunkSize << std::ios_base::hex << bytes << endl;
-    asio::async_write(transmitter, asio::buffer(chunkSize.str()), yield);
-    // Write the data
-    asio::async_write(transmitter, asio::buffer(buffer, bytes), yield);
-    // Write a new line
-    asio::async_write(transmitter, asio::buffer(endl, 2), yield);
-  }
+HTTPResponse HTTP::put(const std::string path, std::string data) {
+  return PUT_OR_POST("PUT", path, data);
 }
 
-template <typename T>
-void transmit(T &transmitter, std::istream &data, asio::yield_context yield) {
-  const size_t bufferSize = 1024;
-  char buffer[bufferSize];
-  while (data.good()) {
-    size_t bytes = data.readsome(buffer, bufferSize);
-    if (bytes == 0)
-      break;
-    asio::async_write(transmitter, asio::buffer(buffer, bytes), yield);
-  }
+HTTPResponse HTTP::post(const std::string path, std::string data) {
+  return PUT_OR_POST("POST", path, data);
 }
 
-
-HTTPResponse HTTP::putStream(const std::string path, std::istream& data) {
+HTTPResponse HTTP::PUT_OR_POST_STREAM(const std::string verb,
+                                      const std::string path,
+                                      std::istream &data) {
   boost::asio::streambuf buf;
   std::ostream request(&buf);
   // TODO: urlencode ? parameters ? other headers ? chunked data support
-  request << "PUT " << path << " HTTP/1.1" << endl;
+  request << verb << " " << path << " HTTP/1.1" << endl;
   request << "Host: " << hostName << endl;
   request << "Accept: */*" << endl;
   request << "Accept-Encoding: gzip, deflate" << endl;
   request << "TE: trailers" << endl;
-  // Find the file size
+  // Find the stream size
   data.seekg(0, std::istream::end);
   long size = data.tellg();
   data.seekg(0);
@@ -469,8 +559,14 @@ HTTPResponse HTTP::putStream(const std::string path, std::istream& data) {
   return result;
 }
 
-//HTTPResponse HTTP::post(const std::string path, std::string data);
-//HTTPResponse HTTP::postStream(const std::string path, std::istream& data);
+HTTPResponse HTTP::putStream(const std::string path, std::istream& data) {
+  return PUT_OR_POST_STREAM("PUT", path, data);
+}
+
+HTTPResponse HTTP::postStream(const std::string path, std::istream& data) {
+  return PUT_OR_POST_STREAM("POST", path, data);
+}
+
 //HTTPResponse HTTP::patch(const std::string path, std::string data);
 
 bool HTTP::is_open() const {

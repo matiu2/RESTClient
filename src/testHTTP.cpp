@@ -49,6 +49,26 @@ bool testPut(asio::io_service &io_service, tcp::resolver &resolver, bool is_ssl,
   return true;
 }
 
+bool testPost(asio::io_service &io_service, tcp::resolver &resolver, bool is_ssl,
+             bool fromFile, asio::yield_context yield) {
+  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+  std::string source("This is some data");
+  if (fromFile) {
+    std::stringstream fn;
+    fn << "test-post";
+    if (is_ssl)
+      fn << "-ssl";
+    fn << ".txt";
+    std::fstream f(fn.str());
+    f << source;
+    f.seekg(0);
+    server.putStream("/post", f);
+  } else {
+    server.post("/post", source);
+  }
+  return true;
+}
+
 bool testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
                     bool is_ssl, bool toFile, asio::yield_context yield) {
   RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
@@ -155,7 +175,19 @@ int main(int argc, char *argv[]) {
       {"PUT - ssl - no file", std::bind(testPut, std::ref(io_service),
                                         std::ref(resolver), true, false, _1)},
       {"PUT - ssl - file", std::bind(testPut, std::ref(io_service),
-                                     std::ref(resolver), true, true, _1)}};
+                                     std::ref(resolver), true, true, _1)},
+      // Post
+      {"POST - no ssl - no file",
+       std::bind(testPut, std::ref(io_service), std::ref(resolver), false,
+                 false, _1)},
+      {"POST - ssl - file", std::bind(testPut, std::ref(io_service),
+                                     std::ref(resolver), false, true, _1)},
+      {"POST - ssl - no file", std::bind(testPut, std::ref(io_service),
+                                        std::ref(resolver), true, false, _1)},
+      {"POST - ssl - file", std::bind(testPut, std::ref(io_service),
+                                     std::ref(resolver), true, true, _1)},
+                                     
+                                     };
 
   auto runTest = [&](asio::yield_context yield, const std::string &name,
                      std::function<bool(asio::yield_context)> test) {

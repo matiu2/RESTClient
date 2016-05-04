@@ -1,9 +1,8 @@
 #pragma once
 #include "HTTPBody.hpp"
+#include "HTTPHeaders.hpp"
 
 namespace RESTClient {
-
-using Headers = std::map<std::string, std::string>;
 
 /// Response from an HTTP request
 class HTTPResponse {
