@@ -49,10 +49,10 @@ private:
   tcp::socket socket;
   tcp::resolver::iterator endpoints;
   void ensureConnection();
-  HTTPResponse PUT_OR_POST(const std::string verb, const std::string path,
-                                 std::string data);
-  HTTPResponse PUT_OR_POST_STREAM(const std::string verb,
-                                  const std::string path, std::istream &data);
+  HTTPResponse PUT_OR_POST(std::string verb, std::string path,
+                           std::string data);
+  HTTPResponse PUT_OR_POST_STREAM(std::string verb,
+                                  std::string path, std::istream &data);
 
 public:
   HTTP(std::string hostName, asio::io_service &io_service,
@@ -67,14 +67,14 @@ public:
   HTTPResponse action(HTTPRequest& request);
   // Get a resource from the server. Path is the part after the URL.
   // eg. get("/person/1"); would get http://httpbin.org/person/1
-  HTTPResponse get(const std::string path);
+  HTTPResponse get(std::string path);
   HTTPResponse getToFile(std::string serverPath, const std::string& filePath);
-  HTTPResponse del(const std::string path);
-  HTTPResponse put(const std::string path, std::string data);
-  HTTPResponse putStream(const std::string path, std::istream& data);
-  HTTPResponse post(const std::string path, std::string data);
-  HTTPResponse postStream(const std::string path, std::istream& data);
-  HTTPResponse patch(const std::string path, std::string data);
+  HTTPResponse del(std::string path);
+  HTTPResponse put(std::string path, std::string data);
+  HTTPResponse putStream(std::string path, std::istream& data);
+  HTTPResponse post(std::string path, std::string data);
+  HTTPResponse postStream(std::string path, std::istream& data);
+  HTTPResponse patch(std::string path, std::string data);
   bool is_open() const; // Return true if the connection is open
   void close(); // Close the connection
 };

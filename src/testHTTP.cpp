@@ -19,8 +19,7 @@ bool testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl,
       fn << "-ssl";
     fn << ".json";
     response = server.getToFile("/get", fn.str());
-  }
-  else
+  } else
     response = server.get("/get");
   // Check it
   std::string shouldContain("httpbin.org/get");

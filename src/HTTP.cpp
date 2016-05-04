@@ -112,27 +112,28 @@ public:
 
 void HTTP::addDefaultHeaders(HTTPRequest& request) {
   // Host
-  std::string& value = request.headers["Host"];
-  if (value.empty())
-    value = request.hostName;
+  std::string* value = &request.headers["Host"];
+  if (value->empty())
+    *value = hostName;
   // Accept */*
-  value = request.headers["Accept"];
-  if (value.empty())
-    value = "*/*";
+  value = &request.headers["Accept"];
+  if (value->empty())
+    *value = "*/*";
   // Accept-Encoding: gzip, deflate
-  value = request.headers["Accept-Encoding"];
-  if (value.empty())
-    value = "gzip, deflate";
+  value = &request.headers["Accept-Encoding"];
+  if (value->empty())
+    *value = "gzip, deflate";
   // TE: trailers
-  value = request.headers["TE"];
-  if (value.empty())
-    value = "trailers";
+  value = &request.headers["TE"];
+  if (value->empty())
+    *value = "trailers";
   // Content-Length
   long size = request.body.size();
-  if (size >= 0)
-  value = request.headers["Content-Length"];
-  if (value.empty())
-    value = std::to_string(size);
+  if (size >= 0) {
+    value = &request.headers["Content-Length"];
+    if (value->empty())
+      *value = std::to_string(size);
+  }
 }
 
 template <typename T>
@@ -396,32 +397,9 @@ void HTTP::ensureConnection() {
   }
 }
 
-HTTPResponse HTTP::get(const std::string path) {
-  boost::asio::streambuf buf;
-  std::iostream request(&buf);
-  // TODO: urlencode ? parameters ? other headers ? chunked data support
-  request << "GET " << path << " HTTP/1.1" << endl;
-  request << "Host: " << hostName << endl;
-  request << "Accept: */*" << endl;
-  request << "Accept-Encoding: gzip, deflate" << endl;
-  request << "TE: trailers" << endl;
-  request << endl;
-  #ifdef HTTP_ON_STD_OUT
-  std::cout << std::endl << "> ";
-  for (auto& part : buf.data())
-    std::cout.write(boost::asio::buffer_cast<const char *>(part),
-                    boost::asio::buffer_size(part));
-  #endif
-  HTTPResponse result;
-  ensureConnection();
-  if (is_ssl) {
-    asio::async_write(sslStream, buf, yield);
-    readHTTPReply(*this, sslStream, result);
-  } else {
-    asio::async_write(socket, buf, yield);
-    readHTTPReply(*this, socket, result);
-  }
-  return result;
+HTTPResponse HTTP::get(std::string path) {
+  HTTPRequest request("GET", path);
+  return action(request);
 }
 
 HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath) {
@@ -453,7 +431,7 @@ HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath
   return result;
 }
 
-HTTPResponse HTTP::del(const std::string path) {
+HTTPResponse HTTP::del(std::string path) {
   boost::asio::streambuf buf;
   std::ostream request(&buf);
   // TODO: urlencode ? parameters ? other headers ? chunked data support
@@ -481,7 +459,8 @@ HTTPResponse HTTP::del(const std::string path) {
   return result;
 }
 
-HTTPResponse HTTP::PUT_OR_POST(const std::string verb, const std::string path, std::string data) {
+HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
+                               std::string data) {
   boost::asio::streambuf buf;
   std::ostream request(&buf);
   // TODO: urlencode ? parameters ? other headers ? chunked data support
@@ -521,8 +500,7 @@ HTTPResponse HTTP::post(const std::string path, std::string data) {
   return PUT_OR_POST("POST", path, data);
 }
 
-HTTPResponse HTTP::PUT_OR_POST_STREAM(const std::string verb,
-                                      const std::string path,
+HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb, std::string path,
                                       std::istream &data) {
   boost::asio::streambuf buf;
   std::ostream request(&buf);
@@ -559,11 +537,11 @@ HTTPResponse HTTP::PUT_OR_POST_STREAM(const std::string verb,
   return result;
 }
 
-HTTPResponse HTTP::putStream(const std::string path, std::istream& data) {
+HTTPResponse HTTP::putStream(std::string path, std::istream& data) {
   return PUT_OR_POST_STREAM("PUT", path, data);
 }
 
-HTTPResponse HTTP::postStream(const std::string path, std::istream& data) {
+HTTPResponse HTTP::postStream(std::string path, std::istream& data) {
   return PUT_OR_POST_STREAM("POST", path, data);
 }
 
