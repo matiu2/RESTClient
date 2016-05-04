@@ -64,7 +64,9 @@ public:
   void addDefaultHeaders(HTTPRequest& request);
   /// Perform an HTTP action (this is a catch all)
   /// request headers may be modified to add the defaults
-  HTTPResponse action(HTTPRequest& request);
+  /// By default will read the response to a string, but if you specify
+  /// 'filePath' it'll save it to a file
+  HTTPResponse action(HTTPRequest& request, std::string filePath="");
   // Get a resource from the server. Path is the part after the URL.
   // eg. get("/person/1"); would get http://httpbin.org/person/1
   HTTPResponse get(std::string path);
