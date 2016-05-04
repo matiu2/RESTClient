@@ -410,31 +410,8 @@ HTTPResponse HTTP::getToFile(std::string serverPath, const std::string &filePath
 }
 
 HTTPResponse HTTP::del(std::string path) {
-  boost::asio::streambuf buf;
-  std::ostream request(&buf);
-  // TODO: urlencode ? parameters ? other headers ? chunked data support
-  request << "DELETE " << path << " HTTP/1.1" << endl;
-  request << "Host: " << hostName << endl;
-  request << "Accept: */*" << endl;
-  request << "Accept-Encoding: gzip, deflate" << endl;
-  request << "TE: trailers" << endl;
-  request << endl;
-  #ifdef HTTP_ON_STD_OUT
-  std::cout << std::endl << "> ";
-  for (auto& part : buf.data())
-    std::cout.write(boost::asio::buffer_cast<const char *>(part),
-                    boost::asio::buffer_size(part));
-  #endif
-  HTTPResponse result;
-  ensureConnection();
-  if (is_ssl) {
-    asio::async_write(sslStream, buf, yield);
-    readHTTPReply(*this, sslStream, result);
-  } else {
-    asio::async_write(socket, buf, yield);
-    readHTTPReply(*this, socket, result);
-  }
-  return result;
+  HTTPRequest request("DELETE", path);
+  return action(request);
 }
 
 HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
