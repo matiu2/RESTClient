@@ -12,7 +12,7 @@ void HTTPBody::consumeData(std::string &buffer) {
     auto asStream = dynamic_cast<HTTPStreamBody *>(body.get());
     if (!asStream)
       throw std::runtime_error("Unkown HTTPBody type. Cannot find stream");
-    std::iostream &saving = asStream->body();
+    std::ostream &saving = asStream->writing();
     saving.write(buffer.c_str(), buffer.size());
   }
   buffer.clear();
@@ -55,32 +55,32 @@ HTTPBody &HTTPBody::operator=(std::stringstream &&value) {
   return *this;
 }
 
-/// Turn the body into a file stream
-HTTPBody &HTTPBody::operator=(std::fstream &&value) {
-  body.reset(new HTTPFileBody(std::move(value)));
-  return *this;
-}
-
 /// Copy the body into a new string
 HTTPBody::operator std::string() const {
   auto asString = dynamic_cast<HTTPStringBody *>(body.get());
   if (asString)
     return asString->body;
-  auto asStream = dynamic_cast<HTTPStreamBody *>(body.get());
-  if (!asStream)
+  auto streamBody = dynamic_cast<HTTPStreamBody *>(body.get());
+  if (!streamBody)
     return "";
-  auto* stringStream = dynamic_cast<std::stringstream*>(&asStream->body());
+  auto* stringStream = dynamic_cast<std::stringstream*>(&streamBody->reading());
   if (stringStream)
     return stringStream->str();
   else {
-    asStream->body().seekg(0);
-    return {std::istream_iterator<char>(asStream->body()), {}};
+    std::istream& in = streamBody->reading();
+    in.seekg(0, std::ios_base::end);
+    auto size = in.tellg();
+    in.seekg(0);
+    std::string result;
+    result.reserve(size);
+    std::copy(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>(), std::back_inserter(result));
+    return result;
   }
 }
 
-/// Get a reference to a stream. If the body is stored in a string, move it
+/// Get a reference to a stream for reading from. If the body is stored in a string, move it
 /// into a stream and return that.
-HTTPBody::operator std::iostream &() {
+HTTPBody::operator std::istream &() {
   auto asString = dynamic_cast<HTTPStringBody *>(body.get());
   if (asString) {
     // If it came as a string, turn into a stringstream
@@ -89,21 +89,28 @@ HTTPBody::operator std::iostream &() {
   auto asStream = dynamic_cast<HTTPStreamBody *>(body.get());
   if (!asStream)
     throw std::runtime_error("Unkown HTTPBody type. Cannot find stream");
-  return asStream->body();
+  return asStream->reading();
+}
+
+/// Get a reference to a stream for reading from. If the body is stored in a string, move it
+/// into a stream and return that.
+HTTPBody::operator std::ostream &() {
+  auto asString = dynamic_cast<HTTPStringBody *>(body.get());
+  if (asString) {
+    // If it came as a string, turn into a stringstream
+    body.reset(new HTTPStringStreamBody(asString->body));
+  }
+  auto asStream = dynamic_cast<HTTPStreamBody *>(body.get());
+  if (!asStream)
+    throw std::runtime_error("Unkown HTTPBody type. Cannot find stream");
+  return asStream->writing();
 }
 
 /// If it's a stream flush it
 void HTTPBody::flush() {
   auto asStream = dynamic_cast<HTTPStreamBody *>(body.get());
   if (asStream)
-    asStream->body().flush();
-}
-
-/// If it's an fstream close it
-void HTTPBody::close() {
-  auto asFile = dynamic_cast<HTTPFileBody *>(body.get());
-  if (asFile)
-    asFile->file.close();
+    asStream->writing().flush();
 }
 
 long HTTPBody::size() {
@@ -113,7 +120,7 @@ long HTTPBody::size() {
   auto asStream = dynamic_cast<HTTPStreamBody *>(body.get());
   if (!asStream)
     return 0;
-  std::iostream& data = asStream->body();
+  std::istream& data = asStream->reading();
   data.seekg(0, std::istream::end);
   long size = data.tellg();
   data.seekg(0);

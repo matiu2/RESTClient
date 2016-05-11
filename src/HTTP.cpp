@@ -180,7 +180,7 @@ void transmitBody(T &transmitter, HTTPRequest &request,
       asio::async_write(transmitter, asio::buffer(*body), yield);
   }
   case HTTPBody::Type::stream: {
-    std::iostream &data = request.body;
+    std::istream &data = request.body;
     if (request.body.size() >= 0)
       transmit(transmitter, data, yield);
     else

@@ -108,18 +108,7 @@ bool testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
     }
   }
 
-
-  std::string body;
-
-  if (toFile) {
-    response.body.flush();
-    response.body.close();
-    std::fstream reading(path.str(), std::ios_base::in | std::ios_base::binary);
-    std::copy(std::istream_iterator<char>(reading),
-              std::istream_iterator<char>(), std::back_inserter(body));
-  } else {
-    body = *response.body.asStringConst();
-  }
+  std::string body = response.body;
 
   if (expected.str() != body) {
     std::stringstream msg;
