@@ -23,8 +23,14 @@ bool testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl,
     response = server.get("/get");
   // Check it
   std::string shouldContain("httpbin.org/get");
+  response.body.flush();
   std::string body = response.body;
-  assert(boost::algorithm::contains(body, shouldContain));
+  if (!boost::algorithm::contains(body, shouldContain)) {
+    using namespace std;
+    cerr << "Expected repsonse to contain '" << shouldContain << "'" << endl
+         << "This is what we got: '" << body << "'" << endl << flush;
+    return false;
+  }
   return true;
 }
 
@@ -101,7 +107,20 @@ bool testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
       i += toWrite;
     }
   }
-  std::string body = response.body;
+
+
+  std::string body;
+
+  if (toFile) {
+    response.body.flush();
+    response.body.close();
+    std::fstream reading(path.str(), std::ios_base::in | std::ios_base::binary);
+    std::copy(std::istream_iterator<char>(reading),
+              std::istream_iterator<char>(), std::back_inserter(body));
+  } else {
+    body = *response.body.asStringConst();
+  }
+
   if (expected.str() != body) {
     std::stringstream msg;
     using std::endl;
@@ -136,28 +155,28 @@ int main(int argc, char *argv[]) {
   std::vector<
       std::pair<std::string, std::function<bool(asio::yield_context)>>> tests{
       // HTTP get
-      {"HTTP get - no ssl - no file",
+      {"GET Content-Length - no ssl - no file",
        std::bind(testGet, std::ref(io_service), std::ref(resolver), false,
                  false, _1)},
-      {"HTTP get - no ssl - file",
+      {"GET Content-Length - no ssl - file",
        std::bind(testGet, std::ref(io_service), std::ref(resolver), false, true,
                  _1)},
-      {"HTTP get - ssl - no file",
+      {"GET Content-Length - ssl - no file",
        std::bind(testGet, std::ref(io_service), std::ref(resolver), true, false,
                  _1)},
-      {"HTTP get - ssl - file", std::bind(testGet, std::ref(io_service),
+      {"GET Content-Length - ssl - file", std::bind(testGet, std::ref(io_service),
                                           std::ref(resolver), true, true, _1)},
       // HTTP chunked get
-      {"HTTP chunked - no ssl - no file",
+      {"GET CHUNKED - no ssl - no file",
        std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
                  false, false, _1)},
-      {"HTTP chunked - no ssl - file",
+      {"GET CHUNKED - no ssl - file",
        std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
                  false, true, _1)},
-      {"HTTP chunked - ssl - no file",
+      {"GET CHUNKED - ssl - no file",
        std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), true,
                  false, _1)},
-      {"HTTP chunked - ssl - file",
+      {"GET CHUNKED - ssl - file",
        std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), true,
                  true, _1)},
       // Delete
@@ -169,8 +188,8 @@ int main(int argc, char *argv[]) {
       {"PUT - no ssl - no file",
        std::bind(testPut, std::ref(io_service), std::ref(resolver), false,
                  false, _1)},
-      {"PUT - ssl - file", std::bind(testPut, std::ref(io_service),
-                                     std::ref(resolver), false, true, _1)},
+      {"PUT - no ssl - file", std::bind(testPut, std::ref(io_service),
+                                        std::ref(resolver), false, true, _1)},
       {"PUT - ssl - no file", std::bind(testPut, std::ref(io_service),
                                         std::ref(resolver), true, false, _1)},
       {"PUT - ssl - file", std::bind(testPut, std::ref(io_service),
@@ -179,27 +198,28 @@ int main(int argc, char *argv[]) {
       {"POST - no ssl - no file",
        std::bind(testPut, std::ref(io_service), std::ref(resolver), false,
                  false, _1)},
-      {"POST - ssl - file", std::bind(testPut, std::ref(io_service),
-                                     std::ref(resolver), false, true, _1)},
+      {"POST - no ssl - file", std::bind(testPut, std::ref(io_service),
+                                      std::ref(resolver), false, true, _1)},
       {"POST - ssl - no file", std::bind(testPut, std::ref(io_service),
-                                        std::ref(resolver), true, false, _1)},
+                                         std::ref(resolver), true, false, _1)},
       {"POST - ssl - file", std::bind(testPut, std::ref(io_service),
-                                     std::ref(resolver), true, true, _1)},
-                                     
-                                     };
+                                      std::ref(resolver), true, true, _1)},
+
+  };
 
   auto runTest = [&](asio::yield_context yield, const std::string &name,
                      std::function<bool(asio::yield_context)> test) {
     using namespace std;
     try {
+      cerr << "Starting: " << name << endl << flush;
       if (test(yield))
-        cerr << "SUCCESS: " << name << endl;
+        cerr << "SUCCESS: " << name << endl << flush;
       else
-        cerr << "FAILED: " << name << endl;
+        cerr << "FAILED: " << name << endl << flush;
     } catch (std::exception &e) {
       cerr << "ERROR: " << name << " - " << e.what() << endl;
     } catch (...) {
-      cerr << "ERROR: Unexpected exception" << endl;
+      cerr << "ERROR: Unexpected exception in test " << name << endl;
     }
   };
 

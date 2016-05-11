@@ -12,27 +12,23 @@ struct HTTPBaseBody {
 };
 
 struct HTTPStreamBody : public HTTPBaseBody {
-  std::iostream* body;
+  virtual std::iostream& body() = 0;
 };
 
 struct HTTPFileBody : public HTTPStreamBody {
   std::fstream file;
-  HTTPFileBody(std::fstream &&input) : file(std::move(input)) {
-    HTTPStreamBody::body = &file;
-  }
+  HTTPFileBody(std::fstream &&input) : file(std::move(input)) {}
   HTTPFileBody(std::string path)
-      : file(path, std::fstream::in | std::fstream::out) {
-    HTTPStreamBody::body = &file;
-  }
+      : file(path,
+             std::fstream::in | std::fstream::out | std::fstream::binary) {}
+  virtual std::iostream &body() override { return file; }
 };
 
 struct HTTPStringStreamBody : public HTTPStreamBody {
   std::stringstream data;
   HTTPStringStreamBody(std::stringstream&& input) : data(std::move(input)) {}
-  HTTPStringStreamBody(const std::string& input) {
-    data << input;
-    HTTPStreamBody::body = &data;
-  }
+  HTTPStringStreamBody(const std::string &input) { data << input; }
+  virtual std::iostream& body() override { return data; }
 };
 
 struct HTTPStringBody : public HTTPBaseBody {
@@ -41,6 +37,8 @@ struct HTTPStringBody : public HTTPBaseBody {
 };
 
 struct HTTPBody {
+  HTTPBody() {}
+  HTTPBody(std::string data) : body(new HTTPStringBody(std::move(data))) {}
   enum class Type {string, stream, empty};
   std::unique_ptr<HTTPBaseBody> body;
   /// Called when downloading. It'll consume from the buffer and append into our
@@ -57,8 +55,8 @@ struct HTTPBody {
   /// If the body is stored as a string, return a const pointer to it.
   /// Otherwise return nullptr.
   const std::string *asStringConst() const;
-  /// Turn the body into a string (copies the input value)
-  HTTPBody &operator=(const std::string &value);
+  /// Turn the body into a string
+  HTTPBody &operator=(std::string value);
   /// Turn the body into a stringstream
   HTTPBody &operator=(std::stringstream &&value);
   /// Turn the body into a file stream

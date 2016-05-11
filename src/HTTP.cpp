@@ -16,6 +16,7 @@
 #include <boost/range/istream_range.hpp>
 #include <boost/algorithm/cxx11/copy_n.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/system/error_code.hpp>
 #include <boost/range/istream_range.hpp>
 
 #include <boost/asio/ssl/rfc2818_verification.hpp>
@@ -179,7 +180,7 @@ void transmitBody(T &transmitter, HTTPRequest &request,
       asio::async_write(transmitter, asio::buffer(*body), yield);
   }
   case HTTPBody::Type::stream: {
-    std::iostream& data = request.body;
+    std::iostream &data = request.body;
     if (request.body.size() >= 0)
       transmit(transmitter, data, yield);
     else
@@ -197,7 +198,7 @@ HTTPResponse HTTP::action(HTTPRequest& request, std::string filePath) {
   addDefaultHeaders(request);
   stream << request.verb << " " << request.path << " HTTP/1.1" << endl;
 
-  for (const auto& header : request.headers)
+  for (const auto &header : request.headers)
     stream << header.first << ": " << header.second << endl;
   stream << endl;
 
@@ -315,6 +316,7 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
     if (dest) {
       reader.readNBytes(*dest, n_bytes);
     } else {
+      buffer.reserve(n_bytes);
       buffer.resize(0);
       reader.readNBytes(buffer, n_bytes);
       result.body.consumeData(buffer);
@@ -448,7 +450,9 @@ HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
 }
 
 HTTPResponse HTTP::put(const std::string path, std::string data) {
-  return PUT_OR_POST("PUT", path, data);
+  HTTPRequest request("PUT", path, {}, data);
+  std::string* lookng = request.body.asString();
+  return action(request);
 }
 
 HTTPResponse HTTP::post(const std::string path, std::string data) {
@@ -510,17 +514,20 @@ bool HTTP::is_open() const {
 }
 
 void HTTP::close() {
-  if (socket.is_open()) {
-    socket.close();
-  }
   if (sslStream.lowest_layer().is_open()) {
     boost::system::error_code ec;
     sslStream.async_shutdown(yield[ec]);
     sslStream.lowest_layer().close();
     // Short read is not a real error. Everything else is.
-    if (ec.category() != asio::error::get_ssl_category() ||
-        ec.value() != ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ))
-      throw boost::system::system_error(ec);
+    if (ec.category() == asio::error::get_ssl_category() &&
+        ec.value() == ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ))
+      return;
+    if (ec.category() == boost::system::system_category() &&
+        ec.value() == boost::system::errc::success)
+      return;
+    throw boost::system::system_error(ec);
+  } else if (socket.is_open()) {
+    socket.close();
   }
 }
 
