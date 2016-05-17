@@ -135,6 +135,32 @@ bool testDelete(asio::io_service &io_service, tcp::resolver &resolver,
   return true;
 }
 
+bool testGZIPGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl, bool toFile, asio::yield_context yield) {
+  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+  RESTClient::HTTPResponse response;
+  if (toFile) {
+    std::stringstream fn;
+    fn << "tmp-get";
+    if (is_ssl)
+      fn << "-ssl";
+    fn << ".json";
+    response = server.getToFile("/gzip", fn.str());
+  } else
+    response = server.get("/gzip");
+  // Check it
+  std::string shouldContain(R"("gzipped": true)");
+  response.body.flush();
+  std::string body = response.body;
+  if (!boost::algorithm::contains(body, shouldContain)) {
+    using namespace std;
+    cerr << "Expected repsonse to contain '" << shouldContain << "'" << endl
+         << "This is what we got: '" << body << "'" << endl << flush;
+    return false;
+  }
+  return true;
+}
+
+
 int main(int argc, char *argv[]) {
   asio::io_service io_service;
   tcp::resolver resolver(io_service);
@@ -153,8 +179,9 @@ int main(int argc, char *argv[]) {
       {"GET Content-Length - ssl - no file",
        std::bind(testGet, std::ref(io_service), std::ref(resolver), true, false,
                  _1)},
-      {"GET Content-Length - ssl - file", std::bind(testGet, std::ref(io_service),
-                                          std::ref(resolver), true, true, _1)},
+      {"GET Content-Length - ssl - file",
+       std::bind(testGet, std::ref(io_service), std::ref(resolver), true, true,
+                 _1)},
       // HTTP chunked get
       {"GET CHUNKED - no ssl - no file",
        std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
@@ -188,11 +215,24 @@ int main(int argc, char *argv[]) {
        std::bind(testPut, std::ref(io_service), std::ref(resolver), false,
                  false, _1)},
       {"POST - no ssl - file", std::bind(testPut, std::ref(io_service),
-                                      std::ref(resolver), false, true, _1)},
+                                         std::ref(resolver), false, true, _1)},
       {"POST - ssl - no file", std::bind(testPut, std::ref(io_service),
                                          std::ref(resolver), true, false, _1)},
       {"POST - ssl - file", std::bind(testPut, std::ref(io_service),
                                       std::ref(resolver), true, true, _1)},
+      // HTTP get gzipped content
+      {"GET gzip -Length - no ssl - no file",
+       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), false,
+                 false, _1)},
+      {"GET gzip -Length - no ssl - file",
+       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), false,
+                 true, _1)},
+      {"GET gzip -Length - ssl - no file",
+       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), true,
+                 false, _1)},
+      {"GET gzip -Length - ssl - file",
+       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), true,
+                 true, _1)},
 
   };
 

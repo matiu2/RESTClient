@@ -21,13 +21,13 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
 option(BUILD_TESTS "Build the test suite" OFF)
 option(HTTP_ON_STD_OUT "Copy HTTP sent and received to stdout" OFF)
 
-FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS system coroutine)
+FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS system coroutine iostreams)
 FIND_PACKAGE(OpenSSL REQUIRED)
 
 include_directories(${OPENSSL_INCLUDE_DIR} ${OPENSSL_LIBRARIES})
 
 if (${BUILD_TESTS})
-  FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS system coroutine regex)
+  FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS regex)
   enable_testing()
 endif(${BUILD_TESTS})
 

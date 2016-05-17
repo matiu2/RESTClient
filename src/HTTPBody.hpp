@@ -43,21 +43,16 @@ struct HTTPFileBody : public HTTPStreamBody {
 
 struct HTTPStringStreamBody : public HTTPStreamBody {
   std::stringstream data;
+  HTTPStringStreamBody() : data() {}
   HTTPStringStreamBody(std::stringstream&& input) : data(std::move(input)) {}
   HTTPStringStreamBody(const std::string &input) { data << input; }
   virtual std::istream& reading() override { return data; }
   virtual std::ostream& writing() override { return data; }
 };
 
-struct HTTPStringBody : public HTTPBaseBody {
-  HTTPStringBody(std::string value="") : body(std::move(value)) {}
-  std::string body;
-};
-
 struct HTTPBody {
-  HTTPBody() {}
-  HTTPBody(std::string data) : body(new HTTPStringBody(std::move(data))) {}
-  enum class Type {string, stream, empty};
+  HTTPBody() { body.reset(new HTTPStringStreamBody()); }
+  HTTPBody(std::string data) { *this = std::move(data); }
   std::unique_ptr<HTTPBaseBody> body;
   /// Called when downloading. It'll consume from the buffer and append into our
   /// body
@@ -66,13 +61,6 @@ struct HTTPBody {
   operator bool() const { return body != nullptr; }
   /// Initialize the body with a file stream
   void initWithFile(const std::string &path);
-  /// If the body is stored as a string, return a pointer to it. If the body is
-  /// not initialized, initialize it as a string, then return the pointer to it.
-  /// Otherwise return nullptr.
-  std::string *asString();
-  /// If the body is stored as a string, return a const pointer to it.
-  /// Otherwise return nullptr.
-  const std::string *asStringConst() const;
   /// Turn the body into a string
   HTTPBody &operator=(std::string value);
   /// Turn the body into a stringstream
@@ -81,11 +69,9 @@ struct HTTPBody {
   HTTPBody &operator=(std::fstream &&value);
   /// Copy the body into a new string
   operator std::string() const;
-  /// Get a reference to a stream for reading. If the body is stored in a
-  /// string, move it into a stream and return that.
+  /// Get a reference to a stream for reading. 
   operator std::istream &();
-  /// Get a reference to a stream for writing. If the body is stored in a
-  /// string, move it into a stream and return that.
+  /// Get a reference to a stream for writing. 
   operator std::ostream &();
   /// If it's a stream flush it
   void flush();
@@ -93,8 +79,6 @@ struct HTTPBody {
   /// body. positive values are the body size. You should never ever get any
   /// other negative values.
   long size();
-  /// Return the format in which the body is stored
-  Type type() const;
 };
 
 } /* RESTClient */

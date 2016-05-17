@@ -2,22 +2,24 @@
 
 #include <sstream>
 
+#include <boost/algorithm/cxx11/copy_n.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <boost/asio/completion_condition.hpp>
 #include <boost/asio/connect.hpp>
-#include <boost/asio/write.hpp>
-#include <boost/asio/read_until.hpp>
 #include <boost/asio/read.hpp>
+#include <boost/asio/read_until.hpp>
 #include <boost/asio/streambuf.hpp>
-#include <boost/algorithm/string/trim.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/range/iterator_range.hpp>
-#include <boost/range/algorithm/search.hpp>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/istream_range.hpp>
-#include <boost/algorithm/cxx11/copy_n.hpp>
+#include <boost/asio/write.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/lexical_cast.hpp>
-#include <boost/system/error_code.hpp>
+#include <boost/range/algorithm/copy.hpp>
+#include <boost/range/algorithm/search.hpp>
 #include <boost/range/istream_range.hpp>
+#include <boost/range/iterator_range.hpp>
+#include <boost/system/error_code.hpp>
+ 
 
 #include <boost/asio/ssl/rfc2818_verification.hpp>
 
@@ -34,19 +36,22 @@ template <typename Connection> struct TCPReader {
 private:
   Connection &connection;
   asio::yield_context &yield;
-  asio::streambuf buf;
+  asio::streambuf raw_buf;
+  boost::iostreams::filtering_streambuf<boost::iostreams::input> filtered_buf;
+  std::streambuf *buf;
+
 public:
   TCPReader(Connection &connection, asio::yield_context &yield)
-      : connection(connection), yield(yield), buf() {
-  }
+      : connection(connection), yield(yield), raw_buf(), buf(&raw_buf) {}
   void line(std::string &result) {
-    asio::async_read_until(connection, buf, "\n", yield);
-    size_t available = buf.in_avail();
+    assert(buf);
+    asio::async_read_until(connection, raw_buf, "\n", yield);
+    size_t available = buf->in_avail();
     size_t count = 0;
     result.resize(0);
     result.reserve(available);
     while (count < available) {
-      char c = buf.sbumpc();
+      char c = buf->sbumpc();
       ++count;
       result.push_back(c);
       if (c == '\n')
@@ -57,25 +62,76 @@ public:
     std::cout << std::endl << " < " << result << std::endl << std::flush;
 #endif
   }
-  void readAvailableBody(std::string &body) {
+  size_t readAvailableBody(std::ostream &body) {
     // Fills our result.body with what ever's in the buffer
-    size_t available = buf.in_avail();
+    assert(buf);
+    size_t available = buf->in_avail();
+    for (int i = 0; i < available; ++i) {
+      char c = buf->sbumpc();
+#ifdef HTTP_ON_STD_OUT
+      std::cout.put(c);
+      std::cout.flush();
+#endif
+      body.put(c);
+    }
+    return available;
+  };
+  size_t readAvailableBody(std::string &body) {
+    // Fills our result.body with what ever's in the buffer
+    assert(buf);
+    size_t available = buf->in_avail();
     body.reserve(body.size() + available);
     for (size_t i = 0; i != available; ++i)
-      body.push_back(buf.sbumpc());
+      body.push_back(buf->sbumpc());
 #ifdef HTTP_ON_STD_OUT
     std::cout << std::endl << " < " << body << std::flush;
 #endif
+    return available;
   };
+  void readNBytes(std::ostream &destination, size_t toRead) {
+    assert(buf);
+#ifdef HTTP_ON_STD_OUT
+    std::cout << std::endl << " < ";
+#endif
+    size_t available = buf->in_avail();
+    if (available >= toRead) {
+      // If we want less than what we've already downleaded,
+      // copy it out of the incoming buffer to the destination
+      for (size_t i = 0; i != toRead; ++i) {
+        char c = buf->sbumpc();
+#ifdef HTTP_ON_STD_OUT
+        std::cout << c << std::flush;
+#endif
+        destination.put(c);
+      }
+      return;
+    } else {
+      // If we need more than what we've already downloaded,
+      // copy the whole buffer contents
+      toRead -= readAvailableBody(destination);
+      // Now get the rest into the buffer and read that
+      if (toRead > 0) {
+        waitForMoreBody(toRead);
+        assert(buf->in_avail() >= toRead);
+        for (size_t i = 0; i != toRead; ++i) {
+          char c = buf->sbumpc();
+#ifdef HTTP_ON_STD_OUT
+          std::cout << c << std::flush;
+#endif
+          destination.put(c);
+        }
+      }
+    }
+  }
   void readNBytes(std::string &body, size_t toRead) {
 #ifdef HTTP_ON_STD_OUT
     std::cout << std::endl << " < ";
 #endif
     body.reserve(body.size() + toRead);
-    size_t available = buf.in_avail();
+    size_t available = buf->in_avail();
     if (available >= toRead) {
-      for (size_t i=0; i!=toRead; ++i) {
-        body.push_back(buf.sbumpc());
+      for (size_t i = 0; i != toRead; ++i) {
+        body.push_back(buf->sbumpc());
 #ifdef HTTP_ON_STD_OUT
         std::cout << body.back() << std::flush;
 #endif
@@ -88,9 +144,9 @@ public:
       // Now get the rest into the buffer and read that
       if (toRead > 0) {
         waitForMoreBody(toRead);
-        assert(buf.in_avail() >= toRead);
-        for (size_t i=0; i!=toRead; ++i) {
-          body.push_back(buf.sbumpc());
+        assert(buf->in_avail() >= toRead);
+        for (size_t i = 0; i != toRead; ++i) {
+          body.push_back(buf->sbumpc());
 #ifdef HTTP_ON_STD_OUT
           std::cout << body.back() << std::flush;
 #endif
@@ -102,12 +158,22 @@ public:
 #endif
   };
   void waitForMoreBody(size_t bytes) {
-    auto bufs = buf.prepare(bytes);
-    size_t bytesRead =
-        asio::async_read(connection, bufs, asio::transfer_exactly(bytes), yield);
+    auto bufs = raw_buf.prepare(bytes);
+    size_t bytesRead = asio::async_read(connection, bufs,
+                                        asio::transfer_exactly(bytes), yield);
     assert(bytesRead == bytes);
-    buf.commit(bytesRead);
-    assert(buf.in_avail() >= bytes);
+    raw_buf.commit(bytesRead);
+    assert(raw_buf.in_avail() >= bytes);
+  }
+  /// Return at least 1 byte, but whatever we get
+  size_t waitForAnyBody() {
+    return asio::async_read(connection, raw_buf, asio::transfer_at_least(1),
+                            yield);
+  }
+  void startGzipDecoding() {
+    filtered_buf.push(boost::iostreams::gzip_decompressor());
+    filtered_buf.push(*buf);
+    buf = &filtered_buf;
   }
 };
 
@@ -173,23 +239,11 @@ void transmit(T &transmitter, std::istream &data, asio::yield_context yield) {
 template <typename T>
 void transmitBody(T &transmitter, HTTPRequest &request,
                   asio::yield_context yield) {
-  switch (request.body.type()) {
-  case HTTPBody::Type::string: {
-    const std::string *body = request.body.asStringConst();
-    if (body)
-      asio::async_write(transmitter, asio::buffer(*body), yield);
-  }
-  case HTTPBody::Type::stream: {
-    std::istream &data = request.body;
-    if (request.body.size() >= 0)
-      transmit(transmitter, data, yield);
-    else
-      chunkedTransmit(transmitter, data, yield);
-  }
-  case HTTPBody::Type::empty: {
-    return;
-  }
-  };
+  std::istream &data = request.body;
+  if (request.body.size() >= 0)
+    transmit(transmitter, data, yield);
+  else
+    chunkedTransmit(transmitter, data, yield);
 }
 
 HTTPResponse HTTP::action(HTTPRequest& request, std::string filePath) {
@@ -257,6 +311,7 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
   bool keepAlive = true; // All http 1.1 connections are keepalive unless
                          // they contain a 'Connection: close' header
   bool chunked = false;  // Chunked encoding (instead of contentLength)
+  bool gzipped = false;  // incoming content is gzip encoded
 
   std::string input;
   reader.line(input);
@@ -301,7 +356,8 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
         keepAlive = false;
       else if ((key == "Transfer-Encoding") && (value == "chunked"))
         chunked = true;
-      // TODO: check for gzip in response headers
+      else if ((key == "Content-Encoding") && (value == "gzip"))
+        gzipped = true;
       // Store the headers
       result.headers.emplace(std::move(key), std::move(value));
     }
@@ -309,18 +365,13 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
 
   readHeaders();
 
+  if (gzipped)
+    reader.startGzipDecoding();
+
   std::string buffer;
 
   auto readData = [&reader, &buffer, &result](size_t n_bytes) {
-    std::string *dest = result.body.asString();
-    if (dest) {
-      reader.readNBytes(*dest, n_bytes);
-    } else {
-      buffer.reserve(n_bytes);
-      buffer.resize(0);
-      reader.readNBytes(buffer, n_bytes);
-      result.body.consumeData(buffer);
-    }
+    reader.readNBytes(result.body, n_bytes);
   };
 
   // If we have a contentLength, read that many bytes
@@ -346,14 +397,7 @@ void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result) {
   }
   // Close connection if that's what the server wants
   if (!keepAlive) {
-    std::string* destination = result.body.asString();
-    if (destination)
-      reader.readAvailableBody(*destination);
-    else {
-      buffer.resize(0);
-      reader.readAvailableBody(buffer);
-      result.body.consumeData(buffer);
-    }
+    reader.readAvailableBody(result.body);
     http.close();
   }
 }
@@ -451,7 +495,6 @@ HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
 
 HTTPResponse HTTP::put(const std::string path, std::string data) {
   HTTPRequest request("PUT", path, {}, data);
-  std::string* lookng = request.body.asString();
   return action(request);
 }
 
