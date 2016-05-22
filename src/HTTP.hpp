@@ -3,9 +3,9 @@
 #include <boost/asio/io_service.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/spawn.hpp>
-
 #include <boost/asio/ssl/context.hpp>
 #include <boost/asio/ssl/stream.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
 
 #include <fstream>
 
@@ -30,15 +30,12 @@ using namespace boost::asio::ip; // to get 'tcp::'
 namespace ssl = boost::asio::ssl;
 
 class HTTP;
-
-template <typename T>
-HTTPResponse readHTTPReply(HTTP& http, T& connection);
+using boost::iostreams::filtering_istream;
+using boost::iostreams::filtering_ostream;
 
 // Handle an HTTP connection
 class HTTP {
 private:
-  template <typename T>
-  friend void readHTTPReply(HTTP& http, T& connection, HTTPResponse& result);
   std::string hostName;
   asio::io_service &io_service;
   tcp::resolver &resolver;
@@ -47,12 +44,18 @@ private:
   ssl::context ssl_context;
   ssl::stream<tcp::socket> sslStream;
   tcp::socket socket;
+  filtering_istream input;
+  filtering_ostream output;
   tcp::resolver::iterator endpoints;
+  size_t incomingByteCounter = 0;
   void ensureConnection();
   HTTPResponse PUT_OR_POST(std::string verb, std::string path,
                            std::string data);
   HTTPResponse PUT_OR_POST_STREAM(std::string verb,
                                   std::string path, std::istream &data);
+  void readHTTPReply(filtering_istream &input, HTTPResponse &result);
+  void makeInput();
+  void makeOutput();
 
 public:
   HTTP(std::string hostName, asio::io_service &io_service,
