@@ -20,7 +20,6 @@
 #include <boost/range/istream_range.hpp>
 #include <boost/range/iterator_range.hpp>
 #include <boost/system/error_code.hpp>
- 
 
 #include <boost/asio/ssl/rfc2818_verification.hpp>
 
@@ -32,91 +31,114 @@ namespace RESTClient {
 
 namespace io = boost::iostreams;
 
-// This is a boost iostreams source
+/// This is a boost iostreams source. It reads from the SSL/socket connection
 template <typename Connection>
 class NetReader : public io::source {
 private:
   Connection &connection;
   asio::yield_context &yield;
+  bool count_bytes = false;
+  size_t totalBytesRead = 0;
+  size_t bytes_to_read = 0;
+  MAKE THIS INTO A LINE READER, THEN AFTER IT READS A BLANK LINE, IT'LL REQUIRE A SIZE IN ORDER TO CONTINUE READING.
 
 public:
   NetReader(Connection &connection, asio::yield_context &yield)
       : connection(connection), yield(yield) {}
   std::streamsize read(char *s, std::streamsize n) {
-    return asio::async_read(connection, asio::buffer(s, n),
-                            asio::transfer_at_least(1), yield);
-  }
-};
-
-template <typename Connection> class NetBlockReader : public io::source {
-private:
-  Connection &connection;
-  asio::yield_context &yield;
-  size_t &bytes_to_read;
-  std::string starter;
-
-public:
-  NetBlockReader(Connection &connection, asio::yield_context &yield,
-                 size_t &bytes_to_read, std::string &&starter)
-      : connection(connection), yield(yield), bytes_to_read(bytes_to_read),
-        starter(std::move(starter)) {}
-  std::streamsize read(char *s, std::streamsize n) {
-
-    if (bytes_to_read == 0)
+    // If we've read all the body, let the stream know that its ended and not
+    // going to get any more data out of us
+    if ((count_bytes) && (bytes_to_read == 0))
       return 0;
 
-    // Copy the starter bit if  there is any
-    if (starter.length()) {
-      boost::range::copy(starter, s);
-      size_t ln = starter.length();
-      starter.clear();
-      bytes_to_read -= ln;
-      return ln;
-    }
-
-    // Read the rest from the net
-    size_t bytes_read =
-        asio::async_read(connection, asio::buffer(s, n),
-                         asio::transfer_exactly(bytes_to_read), yield);
-    assert(bytes_read == bytes_to_read);
-    bytes_to_read = 0;
+    // Read whatever's in the buffer
+    size_t bytes_read;
+    if (bytes_to_read)
+      // If we know how much we need, just wait for them to come
+      bytes_read = asio::async_read(connection, asio::buffer(s, n),
+                                    asio::transfer_exactly(bytes_to_read), yield);
+    else
+      // If we don't know, just give the steam whatever's in the buffer
+      bytes_read = asio::async_read(connection, asio::buffer(s, n),
+                                    asio::transfer_at_least(1), yield);
+    // If we're counting bytes countdown to stream end
+    if (bytes_to_read > 0)
+      bytes_to_read -= bytes_read;
     return bytes_read;
+  }
+  /// Start counting down the number of bytes until the end of the stream
+  /// In this case until the end of the body
+  void startCountdown(size_t n_bytes=0) {
+    count_bytes = true;
+    bytes_to_read = n_bytes;
+  }
+
+  /// Expect n_bytes to come (eg. if we know the body or chunk size)
+  /// This makes us just wait for the number of bytes we care about
+  /// ignores values over 4k to save RAM, assuming that those bodies will be
+  /// going to files anyway
+  void expect(size_t n_bytes) {
+    // Don't want to use too much RAM, when saving to file,
+    // so don't expect more than 4K
+    if (n_bytes < 4096)
+      bytes_to_read = n_bytes;
   }
 };
 
+/// Convenience function to make a NetReader
 template <typename Connection>
 NetReader<Connection> makeNetReader(Connection &connection,
                                     asio::yield_context &yield) {
   return NetReader<Connection>(connection, yield);
 }
 
-template <typename Connection>
-NetBlockReader<Connection>
-makeNetBlockReader(Connection &connection, asio::yield_context &yield,
-                   size_t &bytes_to_read, std::string &&leftOver) {
-  return NetBlockReader<Connection>(connection, yield, bytes_to_read,
-                                    std::move(leftOver));
-}
+/// A boost iostreams filter; it's a gzip decompressor, but can be turned on and
+/// off, defaults to off
+class OptionalGZipDecompressor {
+public:
+    typedef char              char_type;
+    typedef io::multichar_input_filter_tag category;
+
+    bool enabled = false;
+    io::gzip_decompressor worker;
+
+    template <typename Source>
+    std::streamsize read(Source &src, char_type *s, std::streamsize n) {
+      if (enabled)
+        return worker.read(src, s, n);
+      else
+        return io::read(src, s, n);
+    }
+
+    /// Enable compression
+    void enable() { enabled = true; }
+    /// Disable compression
+    void disable() { enabled = false; }
+};
 
 #ifdef HTTP_ON_STD_OUT
+/// Copies all incoming text to cout
 class CopyIncomingToCout {
 public:
     typedef char              char_type;
     typedef io::input_filter_tag  category;
 
     bool first = true; // Is this the first char in a line ?
+    bool disabled = false;
 
-    template<typename Source>
-    int get(Source& src) {
+    template <typename Source> int get(Source &src) {
       char_type c = io::get(src);
-      if (first)
-        std::cout << "> ";
-      std::cout.put(c);
-      first = (c == '\n');
+      if (!disabled) {
+        if (first)
+          std::cout << "> ";
+        std::cout.put(c);
+        first = (c == '\n');
+      }
       return c;
     }
 };
 
+/// Copies all outgoing text to cout
 class CopyOutgoingToCout {
 public:
     typedef char              char_type;
@@ -135,7 +157,8 @@ public:
 };
 #endif
 
-// This is a boost iostreams sync
+/// This is a boost iostreams sink
+/// Everything written to it goes out on the network
 template <typename Connection>
 class OutputToNet : public io::sink {
 private:
@@ -150,6 +173,7 @@ public:
   }
 };
 
+/// Convenience function to create an OutputToNet sink
 template <typename Connection>
 OutputToNet<Connection> make_output_to_net(Connection &connection,
                                            asio::yield_context &yield) {
@@ -157,6 +181,7 @@ OutputToNet<Connection> make_output_to_net(Connection &connection,
 }
 
 
+/// Adds the default HTTP headers to a request
 void HTTP::addDefaultHeaders(HTTPRequest& request) {
   // Host
   std::string* value = &request.headers["Host"];
@@ -183,25 +208,31 @@ void HTTP::addDefaultHeaders(HTTPRequest& request) {
   }
 }
 
+/// Transmits a body with 'chunked' transfer-encoding (untested because
+/// httpbin.org doesn't support it, but cloud files API does, we'll have to
+/// write some tests that connect to cloud files api later)
 void chunkedTransmit(filtering_ostream &transmitter, std::istream &data,
                      asio::yield_context yield) {
   // https://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.6.1
-  const size_t bufferSize = 1024;
+  const size_t bufferSize = 4096;
   char buffer[bufferSize];
   while (data.good()) {
-    size_t bytes = data.readsome(buffer, bufferSize);
+    data.read(buffer, bufferSize);
+    size_t bytes = data.gcount();
     if (bytes == 0)
       break;
     // Write the chunksize
     transmitter << std::ios_base::hex << bytes << "\r\n";
     // Write the data
-    namespace s = io;
-    s::copy(s::restrict(data, 0, bytes), transmitter);
+    io::copy(io::restrict(data, 0, bytes), transmitter);
     // Write a new line
     transmitter << "\r\n";
   }
 }
 
+/// Transmits a body. If the body size is positive (not -1), it'll send it in
+/// one go. A negative number indicates that we don't know the size, so it
+/// should be sent in chunked transfer-encoding
 void transmitBody(filtering_ostream &transmitter, HTTPRequest &request,
                   asio::yield_context yield) {
   // If we know the body size
@@ -212,6 +243,7 @@ void transmitBody(filtering_ostream &transmitter, HTTPRequest &request,
     chunkedTransmit(transmitter, body, yield);
 }
 
+/// Handles an HTTP action (verb) GET/POST/ etc..
 HTTPResponse HTTP::action(HTTPRequest& request, std::string filePath) {
   ensureConnection();
   addDefaultHeaders(request);
@@ -448,33 +480,30 @@ void HTTP::readHTTPReply(filtering_istream &input, HTTPResponse &result) {
 
   readHeaders();
 
-  // Steal any left over buffered input
-  assert(input.rdbuf());
-  std::string leftOver;
-  auto buf = input.rdbuf();
-  size_t toRead = buf->in_avail();
-  leftOver.reserve(toRead);
-  for (size_t i = 0; i<toRead; ++i)
-    leftOver.push_back(buf->sbumpc());
-  assert(buf->in_avail() == 0);
-
-  // Make a body reader
-  io::filtering_istream bodyReader;
-#ifdef HTTP_ON_STD_OUT
-  bodyReader.push(CopyIncomingToCout());
-#endif
-  if (gzipped)
-    bodyReader.push(io::gzip_decompressor());
-  // Because there's no 'swap' in boost iostream stream buf :( .. we copy the
-  // left over buffer into the body
-  if (is_ssl)
-    bodyReader.push(makeNetBlockReader(sslStream, yield, contentLength,
-                                       std::move(leftOver)));
-  else
-    bodyReader.push(
-        makeNetBlockReader(socket, yield, contentLength, std::move(leftOver)));
-
   std::ostream& body = result.body;
+
+  auto readChunk = [&](size_t size) {
+    if (gzipped) {
+      io::filtering_istream bodyReader;
+#ifdef HTTP_ON_STD_OUT
+      // Print the unzipped content
+      bodyReader.push(CopyIncomingToCout());
+#endif
+      bodyReader.push(io::gzip_decompressor());
+#ifdef HTTP_ON_STD_OUT
+      // Disable output of gzipped content
+      CopyIncomingToCout *coutCopier = input.component<CopyIncomingToCout>(0);
+      assert(coutCopier);
+      coutCopier->disabled = true;
+#endif
+      bodyReader.push(io::restrict(input, size));
+      io::copy(bodyReader, body);
+    } else {
+      for (size_t i=0; i<size; ++i)
+        body.put(input.get());
+    }
+  };
+
   // If we have a contentLength, read that many bytes
   if (chunked) {
     // Read the chunk size;
@@ -482,19 +511,38 @@ void HTTP::readHTTPReply(filtering_istream &input, HTTPResponse &result) {
     contentLength = stoul(line, 0, 16);
     while (contentLength != 0) {
       // TODO: maybe read 'extended chunk' data one day
-      io::copy(bodyReader, body);
+    if (is_ssl) {
+      auto src = input.component<NetReader<decltype(sslStream)>>(2);
+      assert(src);
+      src->expect(contentLength);
+    } else {
+      auto src = input.component<NetReader<decltype(socket)>>(2);
+      assert(src);
+      src->expect(contentLength);
+    }
+      readChunk(contentLength);
       std::string emptyLine;
-      std::getline(bodyReader, emptyLine);
+      std::getline(input, emptyLine);
       if (emptyLine != "\r")
-        throw std::runtime_error("chunked encoding read error. Expected empty line.");
+        throw std::runtime_error(
+            "chunked encoding read error. Expected empty line.");
       getLine(); // Read the next chunk header
       contentLength = std::stoul(line, 0, 16);
     }
     // Read extra headers if there are any
     readHeaders();
-  } else  {
+  } else {
     // Copy the initial buffer contents to the body
-    io::copy(bodyReader, body);
+    if (is_ssl) {
+      auto src = input.component<NetReader<decltype(sslStream)>>(2);
+      assert(src);
+      src->startCountdown(contentLength);
+    } else {
+      auto src = input.component<NetReader<decltype(socket)>>(2);
+      assert(src);
+      src->startCountdown(contentLength);
+    }
+    readChunk(contentLength);
   }
   // Close connection if that's what the server wants
   if (!keepAlive)
@@ -509,6 +557,7 @@ void HTTP::makeInput() {
 #ifdef HTTP_ON_STD_OUT
   input.push(CopyIncomingToCout());
 #endif
+  input.push(OptionalGZipDecompressor());
   if (is_ssl)
     input.push(makeNetReader(sslStream, yield));
   else
