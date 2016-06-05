@@ -44,17 +44,15 @@ private:
   ssl::context ssl_context;
   ssl::stream<tcp::socket> sslStream;
   tcp::socket socket;
-  filtering_istream input;
   filtering_ostream output;
   tcp::resolver::iterator endpoints;
   size_t incomingByteCounter = 0;
   void ensureConnection();
+  void readHTTPReply(HTTPResponse &result);
   HTTPResponse PUT_OR_POST(std::string verb, std::string path,
                            std::string data);
   HTTPResponse PUT_OR_POST_STREAM(std::string verb,
                                   std::string path, std::istream &data);
-  void readHTTPReply(filtering_istream &input, HTTPResponse &result);
-  void makeInput();
   void makeOutput();
 
 public:
