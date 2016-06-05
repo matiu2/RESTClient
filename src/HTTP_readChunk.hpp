@@ -9,8 +9,12 @@
 #include <boost/asio/streambuf.hpp>
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/restrict.hpp>
+#include <boost/iostreams/copy.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 
 namespace RESTClient {
+
+namespace io = boost::iostreams;
 
 template <typename Connection>
 void readChunk(Connection &connection, size_t chunkSize, bool gzipped,

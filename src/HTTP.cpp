@@ -2,8 +2,6 @@
 
 #include <sstream>
 
-#include "HTTP_BodyReader.hpp"
-#include "HTTP_GZIPDecompressor.hpp"
 #include "HTTP_OutputToNet.hpp"
 #include "HTTP_ReadReply.hpp"
 
@@ -16,7 +14,6 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/restrict.hpp>
 #include <boost/lexical_cast.hpp>
-#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/search.hpp>
 #include <boost/range/istream_range.hpp>
 #include <boost/range/iterator_range.hpp>
@@ -251,21 +248,6 @@ HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb, std::string path,
   readHTTPReply(result);
   return result;
 }
-
-struct CharBufSource : public io::source {
-
-  std::vector<char> &data;
-  decltype(data.begin()) pos;
-
-  CharBufSource(std::vector<char> &data) : data(data), pos(data.begin()) {}
-
-  std::streamsize read(char *s, std::streamsize n) {
-    size_t toRead = std::min(n, data.end() - pos);
-    std::copy(pos, pos + toRead, s);
-    return toRead;
-  }
-};
-
 
 void HTTP::makeOutput() {
   output.reset();
