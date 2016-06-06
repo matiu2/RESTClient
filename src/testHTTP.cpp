@@ -1,10 +1,12 @@
 #include "HTTP.hpp"
+#include "JobRunner.hpp"
 
 #include <iostream>
 #include <sstream>
 
 #include <boost/regex.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+
 
 using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
@@ -236,40 +238,25 @@ int main(int argc, char *argv[]) {
 
   };
 
-  auto runTest = [&](asio::yield_context yield, const std::string &name,
-                     std::function<bool(asio::yield_context)> test) {
-    using namespace std;
-    try {
-      cerr << "Starting: " << name << endl << flush;
-      if (test(yield))
-        cerr << "SUCCESS: " << name << endl << flush;
-      else
-        cerr << "FAILED: " << name << endl << flush;
-    } catch (std::exception &e) {
-      cerr << "ERROR: " << name << " - " << e.what() << endl;
-    } catch (...) {
-      cerr << "ERROR: Unexpected exception in test " << name << endl;
-    }
-  };
+  RESTClient::JobRunner jobs(io_service, 4);
 
   // Parse args for regexes
   std::vector<boost::regex> regexs;
-  for (int i=1; i<argc; ++i)
+  for (int i = 1; i < argc; ++i)
     regexs.push_back(boost::regex(argv[i]));
 
   if (regexs.size() != 0)
     for (auto &pair : tests) {
       for (auto &regex : regexs)
         if (boost::regex_search(pair.first, regex)) {
-          asio::spawn(io_service, std::bind(runTest, _1, std::ref(pair.first),
-                                            std::ref(pair.second)));
+          jobs.addJob(pair.first, pair.second);
           break;
         }
     }
-  else
+  else {
     for (auto &pair : tests)
-      asio::spawn(io_service, std::bind(runTest, _1, std::ref(pair.first),
-                                        std::ref(pair.second)));
+      jobs.addJob(pair.first, pair.second);
+  }
 
   io_service.run();
   return 0;
