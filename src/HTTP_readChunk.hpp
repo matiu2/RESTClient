@@ -1,8 +1,6 @@
 #pragma once
 
-#ifdef HTTP_ON_STD_OUT
 #include "HTTP_CopyToCout.hpp"
-#endif
 
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>

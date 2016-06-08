@@ -5,10 +5,7 @@
 #include "HTTP_OutputToNet.hpp"
 #include "HTTP_ReadReply.hpp"
 
-#ifdef HTTP_ON_STD_OUT
 #include "HTTP_CopyToCout.hpp"
-#endif
-
 
 #include <boost/asio/connect.hpp>
 #include <boost/iostreams/filtering_stream.hpp>

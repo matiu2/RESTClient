@@ -1,4 +1,5 @@
 #pragma once
+#ifdef HTTP_ON_STD_OUT
 
 #include <iostream>
 #include <boost/iostreams/concepts.hpp>
@@ -47,3 +48,4 @@ public:
 };
   
 } /* RESTClient */
+#endif

@@ -5,10 +5,7 @@
 #include <boost/algorithm/string/find.hpp>
 
 #include "HTTP_readChunk.hpp"
-
-#ifdef HTTP_ON_STD_OUT
 #include "HTTP_CopyToCout.hpp"
-#endif
 
 namespace RESTClient {
 

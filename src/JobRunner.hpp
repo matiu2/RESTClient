@@ -13,7 +13,9 @@ struct CountSentinel {
   size_t& count;
   std::function<void()> onDone;
   CountSentinel(size_t &count, std::function<void()> onDone)
-      : count(count), onDone(onDone) {}
+      : count(count), onDone(onDone) {
+    ++count;
+  }
   ~CountSentinel() {
     --count;
     // onDone will start the next job in the queue if there is one
@@ -43,7 +45,6 @@ struct JobRunner {
     Job job;
     std::tie(name, job) = std::move(jobs.front());
     jobs.pop();
-    ++jobsRunningNow;
     asio::spawn(io_service,
                 [ job = std::move(job), name = std::move(name), this ](
                     asio::yield_context yield) {
