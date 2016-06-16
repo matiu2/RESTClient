@@ -3,6 +3,8 @@
 #include <queue>
 #include <boost/asio/io_service.hpp>
 
+#include "logger.hpp"
+
 namespace RESTClient {
 
 using namespace boost;
@@ -14,9 +16,11 @@ struct CountSentinel {
   std::function<void()> onDone;
   CountSentinel(size_t &count, std::function<void()> onDone)
       : count(count), onDone(onDone) {
+    LOG_TRACE("CountSentinel" << count);
     ++count;
   }
   ~CountSentinel() {
+    LOG_TRACE("~CountSentinel" << count);
     --count;
     // onDone will start the next job in the queue if there is one
     // it hopefully shouldn't throw any exceptions
@@ -35,6 +39,7 @@ struct JobRunner {
   JobRunner(asio::io_service &io_service, size_t maxConcurrentJobs = 8)
       : io_service(io_service), maxConcurrentJobs(maxConcurrentJobs) {}
   void addJob(std::string name, Job job) {
+    LOG_TRACE("JobRunner::addJob: " << name);
     jobs.emplace(std::move(typename decltype(jobs)::value_type(
         {std::move(name), std::move(job)})));
     if (jobsRunningNow < maxConcurrentJobs)
@@ -51,21 +56,19 @@ struct JobRunner {
       CountSentinel s(this->jobsRunningNow,
                       std::bind(&JobRunner::checkStartJob, this));
       try {
+        LOG_DEBUG("Starting Job: " << name);
         job(yield);
+        LOG_DEBUG("Job Completed: " << name);
       } catch (std::exception &e) {
-        std::stringstream msg;
-        msg << "Exception caught while running job '" << name
-            << "': " << e.what();
-        throw std::runtime_error(msg.str());
+        LOG_ERROR("Job threw exception: " << name << "': " << e.what());
       } catch (...) {
-        std::stringstream msg;
-        msg << "Unknown exception caught while running job '" << name;
-        throw std::runtime_error(msg.str());
+        LOG_ERROR("Unknown exception caught while running job '" << name);
       }
     });
   }
   /// Starts a job if one is avalable and we are below maxConcurrentJobs
   void checkStartJob() {
+    LOG_TRACE("checkStartJob");
     if ((jobsRunningNow < maxConcurrentJobs) && (jobs.size() > 0)) {
       startJob();
     }

@@ -28,6 +28,7 @@ namespace io = boost::iostreams;
 template <typename Connection>
 OutputToNet<Connection> make_output_to_net(Connection &connection,
                                            asio::yield_context &yield) {
+  LOG_TRACE("make_output_to_net");
   return OutputToNet<Connection>(connection, yield);
 }
 
@@ -206,11 +207,13 @@ HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
 }
 
 HTTPResponse HTTP::put(const std::string path, std::string data) {
+  LOG_TRACE("PUT " << path << " - " << data);
   HTTPRequest request("PUT", path, {}, data);
   return action(request);
 }
 
 HTTPResponse HTTP::post(const std::string path, std::string data) {
+  LOG_TRACE("POST " << path << " - " << data);
   return PUT_OR_POST("POST", path, data);
 }
 

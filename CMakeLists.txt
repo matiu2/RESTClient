@@ -33,10 +33,14 @@ set(MIN_LOG_LEVEL ERROR CACHE STRING "How much to log to std::clog. NONE, TRACE,
 option(LOG_LOCATION "Log the location in the files of log messages" OFF)
 
 # extra definitions
+if (NOT "${MIN_LOG_LEVEL}" STREQUAL "")
 add_definitions(-DMIN_LOG_LEVEL=${MIN_LOG_LEVEL})
+endif()
+
 if (${LOG_LOCATION})
 add_definitions(-DLOG_LOCATION=1)
 endif()
+
 if (${HTTP_ON_STD_OUT})
   add_definitions(-DHTTP_ON_STD_OUT)
 endif()

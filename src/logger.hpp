@@ -7,29 +7,15 @@
 namespace RESTClient {
 
 // All log levels
-#define LL_NONE 0
-#define LL_TRACE 1
-#define LL_DEBUG 2
-#define LL_INFO 3
-#define LL_WARN 4
-#define LL_ERROR 5
-#define ll_trace 6
+#define TRACE 1
+#define DEBUG 2
+#define INFO 3
+#define WARN 4
+#define ERROR 5
+#define NONE 6
 
-// Work out our log level
-#if MIN_LOG_LEVEL == TRACE
-#define LOG_LEVEL LL_TRACE
-#elif MIN_LOG_LEVEL == DEBUG
-#define LOG_LEVEL LL_DEBUG
-#elif MIN_LOG_LEVEL == INFO
-#define LOG_LEVEL LL_INFO
-#elif MIN_LOG_LEVEL == WARN
-#define LOG_LEVEL LL_WARN
-#elif MIN_LOG_LEVEL == ERROR
-#define LOG_LEVEL LL_ERROR
-#elif MIN_LOG_LEVEL == FATAL
-#define LOG_LEVEL LL_FATAL
-#else
-#define LOG_LEVEL LL_NONE
+#ifndef MIN_LOG_LEVEL
+#define MIN_LOG_LEVEL NONE
 #endif
 
 #ifdef LOG_LOCATION
@@ -41,31 +27,31 @@ namespace RESTClient {
 #define LOG(LEVEL, ARG) std::clog << LEVEL << " - " ARG << std::endl;
 #endif
 
-#if LOG_LEVEL >= LL_TRACE
+#if MIN_LOG_LEVEL <= TRACE
 #define LOG_TRACE(ARG) LOG("TRACE", ARG);
 #else
 #define LOG_TRACE(ARG)
 #endif
 
-#if LOG_LEVEL >= LL_DEBUG
+#if MIN_LOG_LEVEL <= DEBUG
 #define LOG_DEBUG(ARG) LOG("DEBUG", ARG);
 #else
 #define LOG_DEBUG(ARG)
 #endif
 
-#if LOG_LEVEL >= LL_INFO
+#if MIN_LOG_LEVEL <= INFO
 #define LOG_INFO(ARG)  LOG("INFO", ARG);
 #else
 #define LOG_INFO(ARG)
 #endif
 
-#if LOG_LEVEL >= LL_WARN
+#if MIN_LOG_LEVEL <= WARN
 #define LOG_WARN(ARG)  LOG("WARNING", ARG);
 #else
 #define LOG_WARN(ARG)
 #endif
 
-#if LOG_LEVEL >= LL_ERROR
+#if MIN_LOG_LEVEL <= ERROR
 #define LOG_ERROR(ARG)                                                         \
   LOG("ERROR", ARG)                                                            \
   std::stringstream msg;                                                       \
@@ -78,7 +64,7 @@ namespace RESTClient {
   throw std::runtime_error(msg.str());
 #endif
 
-#if LOG_LEVEL >= LL_FATAL
+#if MIN_LOG_LEVEL <= FATAL
 #define LOG_FATAL(ARG)                                                         \
   LOG("FATAL", ARG);                                                           \
   std::stringstream msg;                                                       \

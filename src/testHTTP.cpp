@@ -1,12 +1,12 @@
 #include "HTTP.hpp"
 #include "JobRunner.hpp"
+#include "logger.hpp"
 
 #include <iostream>
 #include <sstream>
 
 #include <boost/regex.hpp>
 #include <boost/algorithm/string/predicate.hpp>
-
 
 using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
