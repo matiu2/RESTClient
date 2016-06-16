@@ -7,6 +7,8 @@
 
 #include "HTTP_CopyToCout.hpp"
 
+#include "logger.hpp"
+
 #include <boost/asio/connect.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/restrict.hpp>
@@ -31,6 +33,7 @@ OutputToNet<Connection> make_output_to_net(Connection &connection,
 
 /// Adds the default HTTP headers to a request
 void HTTP::addDefaultHeaders(HTTPRequest &request) {
+  LOG_TRACE("addDefaultHeaders");
   // Host
   std::string *value = &request.headers["Host"];
   if (value->empty())

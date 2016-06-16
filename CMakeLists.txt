@@ -18,22 +18,37 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -fstandalone-debug -fwritable-strings -fno-bui
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
 
-option(BUILD_TESTS "Build the test suite" OFF)
-option(HTTP_ON_STD_OUT "Copy HTTP sent and received to stdout" OFF)
+# Dependencies
 
 FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS system coroutine iostreams)
 FIND_PACKAGE(OpenSSL REQUIRED)
 
 include_directories(${OPENSSL_INCLUDE_DIR} ${OPENSSL_LIBRARIES})
 
+# options
+
+option(BUILD_TESTS "Build the test suite" OFF)
+option(HTTP_ON_STD_OUT "Copy HTTP sent and received to stdout" OFF)
+set(MIN_LOG_LEVEL ERROR CACHE STRING "How much to log to std::clog. NONE, TRACE, DEBUG, INFO, WARN, ERROR, or FATAL")
+option(LOG_LOCATION "Log the location in the files of log messages" OFF)
+
+# extra definitions
+add_definitions(-DMIN_LOG_LEVEL=${MIN_LOG_LEVEL})
+if (${LOG_LOCATION})
+add_definitions(-DLOG_LOCATION=1)
+endif()
+if (${HTTP_ON_STD_OUT})
+  add_definitions(-DHTTP_ON_STD_OUT)
+endif()
+
+# Tests
+
 if (${BUILD_TESTS})
   FIND_PACKAGE(Boost 1.60 REQUIRED COMPONENTS regex)
   enable_testing()
 endif(${BUILD_TESTS})
 
-if (${HTTP_ON_STD_OUT})
-  add_definitions(-DHTTP_ON_STD_OUT)
-endif()
+# Sub directories
 
 add_subdirectory(src)
 add_subdirectory(experiments)
