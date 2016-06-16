@@ -77,15 +77,4 @@ namespace RESTClient {
   throw std::runtime_error(msg.str());
 #endif
 
-#define LOG_DATA_CHANNEL(chan) BOOST_LOG_CHANNEL(sysLogger::get(), chan);
-
-/// Data Log macros. Does not include LINE, FILE, FUNCTION.
-/// TRACE < DEBUG < INFO < WARN < ERROR < FATAL
-#define LOG_DATA_TRACE(ARG) BOOST_LOG_SEV(dataLogger::get(), boost::log::trivial::trace) << ARG
-#define LOG_DATA_DEBUG(ARG) BOOST_LOG_SEV(dataLogger::get(), boost::log::trivial::debug) << ARG
-#define LOG_DATA_INFO(ARG)  BOOST_LOG_SEV(dataLogger::get(), boost::log::trivial::info) << ARG
-#define LOG_DATA_WARN(ARG)  BOOST_LOG_SEV(dataLogger::get(), boost::log::trivial::warning) << ARG
-#define LOG_DATA_ERROR(ARG) BOOST_LOG_SEV(dataLogger::get(), boost::log::trivial::error) << ARG
-#define LOG_DATA_FATAL(ARG) BOOST_LOG_SEV(dataLogger::get(), boost::log::trivial::fatal) << ARG
-
 } /* RESTClient */
