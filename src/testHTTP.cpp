@@ -21,8 +21,11 @@ bool testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl,
       fn << "-ssl";
     fn << ".json";
     response = server.getToFile("/get", fn.str());
-  } else
+    LOG_DEBUG("testGet - filename: " << fn.str());
+  } else {
     response = server.get("/get");
+    LOG_DEBUG("testGet - no file: ");
+  }
   // Check it
   std::string shouldContain("httpbin.org/get");
   response.body.flush();
