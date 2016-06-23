@@ -1,7 +1,5 @@
 #pragma once
 
-#include <boost/asio/io_service.hpp>
-#include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/spawn.hpp>
 #include <boost/asio/ssl/context.hpp>
 #include <boost/asio/ssl/stream.hpp>
@@ -9,8 +7,9 @@
 
 #include <fstream>
 
-#include "HTTPResponse.hpp"
-#include "HTTPRequest.hpp"
+#include <RESTClient/http/Services.hpp>
+#include <RESTClient/http/HTTPResponse.hpp>
+#include <RESTClient/http/HTTPRequest.hpp>
 
 namespace RESTClient {
 
@@ -36,16 +35,17 @@ using boost::iostreams::filtering_ostream;
 // Handle an HTTP connection
 class HTTP {
 private:
-  std::string hostName;
-  asio::io_service &io_service;
-  tcp::resolver &resolver;
+  std::string hostname;
+  pServices services;
+  tcp::resolver::iterator endpoints;
   asio::yield_context yield;
   bool is_ssl;
   ssl::context ssl_context;
-  ssl::stream<tcp::socket> sslStream;
+  // Needs to be a unique_ptr, because ssl::stream has no copy and no move
+  // powerz, but we want to be able to move HTTP instances
+  std::unique_ptr<ssl::stream<tcp::socket>> sslStream;
   tcp::socket socket;
   filtering_ostream output;
-  tcp::resolver::iterator endpoints;
   size_t incomingByteCounter = 0;
   void ensureConnection();
   void readHTTPReply(HTTPResponse &result);
@@ -56,8 +56,9 @@ private:
   void makeOutput();
 
 public:
-  HTTP(std::string hostName, asio::io_service &io_service,
-       tcp::resolver &resolver, asio::yield_context yield, bool is_ssl=true);
+  HTTP(std::string hostname, asio::yield_context yield);
+  HTTP(HTTP&& other);
+  HTTP(const HTTP&) = delete;
   ~HTTP();
 
   /// Modifies 'request' to have our default headers (won't change headers that

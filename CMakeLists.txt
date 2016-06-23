@@ -2,7 +2,11 @@ cmake_minimum_required(VERSION 2.8)
 
 project (RESTClient)
 
-add_definitions(-fPIC -std=c++1z -stdlib=libc++)
+option(IS_CLANG "Are we using the clang compiler?" ON)
+
+if(${IS_CLANG})
+    add_definitions(-fPIC -std=c++1z -stdlib=libc++)
+endif()
 
 # Clang/LLVM libc++
 find_library(CPP c++)
@@ -13,10 +17,12 @@ include_directories(${CPP_V1_INCLUDE_DIR})
 find_package(Threads)
 
 # Nice default debug settings so that we can view the contents of strings in gdb
+if(${IS_CLANG})
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -fstandalone-debug -fwritable-strings -fno-builtin"
     CACHE STRING "Flags used by the compiler during debug builds." FORCE)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
+endif()
 
 # Dependencies
 
@@ -29,13 +35,11 @@ include_directories(${OPENSSL_INCLUDE_DIR} ${OPENSSL_LIBRARIES})
 
 option(BUILD_TESTS "Build the test suite" OFF)
 option(HTTP_ON_STD_OUT "Copy HTTP sent and received to stdout" OFF)
-set(MIN_LOG_LEVEL ERROR CACHE STRING "How much to log to std::clog. NONE, TRACE, DEBUG, INFO, WARN, ERROR, or FATAL")
+set(MIN_LOG_LEVEL ERROR NONE CACHE STRING "How much to log to std::clog. NONE, TRACE, DEBUG, INFO, WARN, ERROR, or FATAL")
 option(LOG_LOCATION "Log the location in the files of log messages" OFF)
 
 # extra definitions
-if (NOT "${MIN_LOG_LEVEL}" STREQUAL "")
 add_definitions(-DMIN_LOG_LEVEL=${MIN_LOG_LEVEL})
-endif()
 
 if (${LOG_LOCATION})
 add_definitions(-DLOG_LOCATION=1)

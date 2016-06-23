@@ -11,8 +11,7 @@ namespace RESTClient {
 
 /// Reads the first line of the HTTP reply and all the headers
 template <typename T>
-std::tuple<bool, int> readFirstLine(T &connection, std::istream &data,
-                                    asio::yield_context yield) {
+std::tuple<bool, int> readFirstLine(T &connection, std::istream &data) {
   // Read in all the header data from the net
   // For later
   std::string temp, ok;
@@ -29,10 +28,10 @@ std::tuple<bool, int> readFirstLine(T &connection, std::istream &data,
 /// of the reply.
 /// throws std::runtime_error if there aren't three words in the reply.
 /// Expects streambuf to have at least all the header info
-void
-readHeaders(std::istream &data, Headers &headers, asio::yield_context yield,
-            std::function<void(std::istream &, std::string &)> getLine =
-                [](std::istream &i, std::string &s) { std::getline(i, s); }) {
+void readHeaders(std::istream &data, Headers &headers,
+                 std::function<void(std::istream &, std::string &)> getLine =
+                     [](std::istream &i,
+                        std::string &s) { std::getline(i, s); }) {
   std::string line, key, value;
   while (true) {
     // Parse it a line at a time
@@ -43,7 +42,8 @@ readHeaders(std::istream &data, Headers &headers, asio::yield_context yield,
     assert(pos);
     using namespace boost::range;
     key.clear();
-    copy(make_iterator_range(line.begin(), pos.begin()), std::back_inserter(key));
+    copy(make_iterator_range(line.begin(), pos.begin()),
+         std::back_inserter(key));
     value.clear();
     copy(make_iterator_range(pos.end(), line.end()), std::back_inserter(value));
     boost::trim(key);
@@ -65,12 +65,13 @@ void readHTTPReply(HTTPResponse &result, Connection &connection,
 
   // Reads the headers into the result
   asio::streambuf buf;
+  LOG_TRACE("readHTTPReply read headers (yield)")
   asio::async_read_until(connection, buf, "\r\n\r\n", yield);
   std::istream data(&buf);
   data.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-  std::tie(ok, result.http_code) = readFirstLine(connection, data, yield);
-  readHeaders(data, result.headers, yield);
+  std::tie(ok, result.http_code) = readFirstLine(connection, data);
+  readHeaders(data, result.headers);
 
   // Read important header values
   // Content-Length
@@ -95,6 +96,7 @@ void readHTTPReply(HTTPResponse &result, Connection &connection,
   auto getLine = [&](std::string &line) {
     // If there's not enough to hold a line, just get more
     if (buf.in_avail() < 2) {
+      LOG_TRACE("readHTTPReply - getLine (yield)");
       asio::async_read_until(connection, buf, "\r\n", yield);
       std::getline(data, line);
       return;
@@ -115,6 +117,7 @@ void readHTTPReply(HTTPResponse &result, Connection &connection,
         c = data.get();
       }
       // We've hit eof, read some more buffer then start again
+      LOG_TRACE("readHTTPReply - read one line (yield)");
       asio::async_read_until(connection, buf, "\r\n", yield);
       data.clear();
     }
@@ -124,6 +127,7 @@ void readHTTPReply(HTTPResponse &result, Connection &connection,
   if ((!chunked) && (contentLength > 0)) {
     // Read a straight content length body
     size_t bytesToRead = contentLength - buf.in_avail();
+    LOG_TRACE("readHTTPReply - read whole body (yield): " << contentLength);
     readChunk(connection, contentLength, gzipped, buf, data, result.body, yield);
   } else {
     // The body is chunked
@@ -138,6 +142,7 @@ void readHTTPReply(HTTPResponse &result, Connection &connection,
 
       std::ostream& body = result.body;;
       auto start = body.tellp();
+    LOG_TRACE("readHTTPReply - read chunk (yield): " << chunkSize);
       readChunk(connection, chunkSize, gzipped, buf, data, body, yield);
       // Read an empty line
       char c;
@@ -147,7 +152,7 @@ void readHTTPReply(HTTPResponse &result, Connection &connection,
       assert(c = '\n');
     }
     // See if we have any trailing headers after the chunks
-    readHeaders(data, result.headers, yield,
+    readHeaders(data, result.headers,
                 [&getLine](std::istream &, std::string &s) {
       s.clear();
       getLine(s);

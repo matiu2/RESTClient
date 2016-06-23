@@ -1,6 +1,7 @@
-#include "HTTP.hpp"
-#include "JobRunner.hpp"
-#include "logger.hpp"
+#include <RESTClient/base/logger.hpp>
+#include <RESTClient/http/HTTP.hpp>
+#include <RESTClient/http/Services.hpp>
+#include <RESTClient/jobManagement/JobDistributor.hpp>
 
 #include <iostream>
 #include <sstream>
@@ -10,18 +11,15 @@
 
 using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
+namespace algo = boost::algorithm;
 
-bool testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl, bool toFile, asio::yield_context yield) {
-  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+bool testGet(const std::string &name, const std::string &hostname, bool toFile,
+             asio::yield_context yield, RESTClient::HTTP &server) {
+  LOG_TRACE("testGet: " << name << " starting....")
   RESTClient::HTTPResponse response;
   if (toFile) {
-    std::stringstream fn;
-    fn << "tmp-get";
-    if (is_ssl)
-      fn << "-ssl";
-    fn << ".json";
-    response = server.getToFile("/get", fn.str());
-    LOG_DEBUG("testGet - filename: " << fn.str());
+    response = server.getToFile("/get", name);
+    LOG_DEBUG("testGet - filename: " << name);
   } else {
     response = server.get("/get");
     LOG_DEBUG("testGet - no file: ");
@@ -36,64 +34,55 @@ bool testGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl,
          << "This is what we got: '" << body << "'" << endl << flush;
     return false;
   }
+  LOG_INFO(name << " PASSED");
   return true;
 }
 
-bool testPut(asio::io_service &io_service, tcp::resolver &resolver, bool is_ssl,
-             bool fromFile, asio::yield_context yield) {
-  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+bool testPut(const std::string &name, const std::string &hostname,
+             bool fromFile, asio::yield_context yield,
+             RESTClient::HTTP &server) {
+  LOG_TRACE(name << " starting...");
   std::string source("This is some data");
   if (fromFile) {
-    std::stringstream fn;
-    fn << "test-put";
-    if (is_ssl)
-      fn << "-ssl";
-    fn << ".txt";
-    std::fstream f(fn.str());
+    std::fstream f(name);
     f << source;
     f.seekg(0);
     server.putStream("/put", f);
   } else {
     server.put("/put", source);
   }
+  LOG_INFO(name << " PASSED");
   return true;
 }
 
-bool testPost(asio::io_service &io_service, tcp::resolver &resolver, bool is_ssl,
-             bool fromFile, asio::yield_context yield) {
-  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+bool testPost(const std::string &name, const std::string &hostname,
+              bool fromFile, asio::yield_context yield,
+              RESTClient::HTTP &server) {
+  LOG_TRACE(name << " starting....")
   std::string source("This is some data");
   if (fromFile) {
-    std::stringstream fn;
-    fn << "test-post";
-    if (is_ssl)
-      fn << "-ssl";
-    fn << ".txt";
-    std::fstream f(fn.str());
+    std::fstream f(name);
     f << source;
     f.seekg(0);
     server.putStream("/post", f);
   } else {
     server.post("/post", source);
   }
+  LOG_INFO(name << " PASSED");
   return true;
 }
 
-bool testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
-                    bool is_ssl, bool toFile, asio::yield_context yield) {
-  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+bool testChunkedGet(const std::string &name, const std::string &hostname,
+                    bool toFile, asio::yield_context yield,
+                    RESTClient::HTTP &server) {
+  LOG_TRACE(name << " starting....")
   const int size = 1024;
   const int chunk_size = 80;
   std::stringstream path;
   path << "/range/" << size << "?duration=1&chunk_size=" << chunk_size;
   RESTClient::HTTPResponse response;
   if (toFile) {
-    std::stringstream fn;
-    fn << "tmp-chunked";
-    if (is_ssl)
-      fn << "-ssl";
-    fn << ".json";
-    response = server.getToFile(path.str(), fn.str());
+    response = server.getToFile(path.str(), name);
   } else
     response = server.get(path.str());
   // Make up the expected string
@@ -127,29 +116,29 @@ bool testChunkedGet(asio::io_service &io_service, tcp::resolver &resolver,
         << "=== Actual data end ===" << endl;
     throw std::runtime_error(msg.str());
   }
+  LOG_INFO(name << " PASSED");
   return true;
 }
 
-bool testDelete(asio::io_service &io_service, tcp::resolver &resolver,
-                    bool is_ssl, asio::yield_context yield) {
-  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+bool testDelete(const std::string &name, const std::string &hostname,
+                bool fromFile, asio::yield_context yield,
+                RESTClient::HTTP &server) {
+  LOG_TRACE(name << " starting....")
   RESTClient::HTTPResponse response = server.del("/delete");
   std::string shouldContain("httpbin.org/delete");
   std::string body = response.body;
   assert(boost::algorithm::contains(body, shouldContain));
+  LOG_INFO(name << " PASSED");
   return true;
 }
 
-bool testGZIPGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_ssl, bool toFile, asio::yield_context yield) {
-  RESTClient::HTTP server("httpbin.org", io_service, resolver, yield, is_ssl);
+bool testGZIPGet(const std::string &name, const std::string &hostname,
+                 bool toFile, asio::yield_context yield,
+                 RESTClient::HTTP &server) {
+  LOG_TRACE(name << " starting....")
   RESTClient::HTTPResponse response;
   if (toFile) {
-    std::stringstream fn;
-    fn << "tmp-get";
-    if (is_ssl)
-      fn << "-ssl";
-    fn << ".json";
-    response = server.getToFile("/gzip", fn.str());
+    response = server.getToFile("/gzip", name);
   } else
     response = server.get("/gzip");
   // Check it
@@ -157,91 +146,72 @@ bool testGZIPGet(asio::io_service& io_service, tcp::resolver& resolver, bool is_
   response.body.flush();
   std::string body = response.body;
   if (!boost::algorithm::contains(body, shouldContain)) {
-    using namespace std;
-    cerr << "Expected repsonse to contain '" << shouldContain << "'" << endl
-         << "This is what we got: '" << body << "'" << endl << flush;
+    LOG_ERROR(name << " FAILED: "
+                   << "Expected repsonse to contain '" << shouldContain << "'"
+                   << std::endl << "This is what we got: '" << body << "'");
     return false;
   }
+  LOG_INFO(name << " PASSED");
   return true;
 }
 
-
 int main(int argc, char *argv[]) {
-  asio::io_service io_service;
-  tcp::resolver resolver(io_service);
 
   using namespace std::placeholders;
 
-  std::vector<
-      std::pair<std::string, std::function<bool(asio::yield_context)>>> tests{
-      // HTTP get
-      {"GET Content-Length - no ssl - no file",
-       std::bind(testGet, std::ref(io_service), std::ref(resolver), false,
-                 false, _1)},
-      {"GET Content-Length - no ssl - file",
-       std::bind(testGet, std::ref(io_service), std::ref(resolver), false, true,
-                 _1)},
-      {"GET Content-Length - ssl - no file",
-       std::bind(testGet, std::ref(io_service), std::ref(resolver), true, false,
-                 _1)},
-      {"GET Content-Length - ssl - file",
-       std::bind(testGet, std::ref(io_service), std::ref(resolver), true, true,
-                 _1)},
-      // HTTP chunked get
-      {"GET CHUNKED - no ssl - no file",
-       std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
-                 false, false, _1)},
-      {"GET CHUNKED - no ssl - file",
-       std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver),
-                 false, true, _1)},
-      {"GET CHUNKED - ssl - no file",
-       std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), true,
-                 false, _1)},
-      {"GET CHUNKED - ssl - file",
-       std::bind(testChunkedGet, std::ref(io_service), std::ref(resolver), true,
-                 true, _1)},
-      // Delete
-      {"DELETE - no ssl", std::bind(testDelete, std::ref(io_service),
-                                    std::ref(resolver), false, _1)},
-      {"DELETE - ssl", std::bind(testDelete, std::ref(io_service),
-                                 std::ref(resolver), false, _1)},
-      // Put
-      {"PUT - no ssl - no file",
-       std::bind(testPut, std::ref(io_service), std::ref(resolver), false,
-                 false, _1)},
-      {"PUT - no ssl - file", std::bind(testPut, std::ref(io_service),
-                                        std::ref(resolver), false, true, _1)},
-      {"PUT - ssl - no file", std::bind(testPut, std::ref(io_service),
-                                        std::ref(resolver), true, false, _1)},
-      {"PUT - ssl - file", std::bind(testPut, std::ref(io_service),
-                                     std::ref(resolver), true, true, _1)},
-      // Post
-      {"POST - no ssl - no file",
-       std::bind(testPut, std::ref(io_service), std::ref(resolver), false,
-                 false, _1)},
-      {"POST - no ssl - file", std::bind(testPut, std::ref(io_service),
-                                         std::ref(resolver), false, true, _1)},
-      {"POST - ssl - no file", std::bind(testPut, std::ref(io_service),
-                                         std::ref(resolver), true, false, _1)},
-      {"POST - ssl - file", std::bind(testPut, std::ref(io_service),
-                                      std::ref(resolver), true, true, _1)},
-      // HTTP get gzipped content
-      {"GET gzip -Length - no ssl - no file",
-       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), false,
-                 false, _1)},
-      {"GET gzip -Length - no ssl - file",
-       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), false,
-                 true, _1)},
-      {"GET gzip -Length - ssl - no file",
-       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), true,
-                 false, _1)},
-      {"GET gzip -Length - ssl - file",
-       std::bind(testGZIPGet, std::ref(io_service), std::ref(resolver), true,
-                 true, _1)},
+  std::vector<RESTClient::QueuedJob> tests(
+      {// HTTP get
+       {"GET Content-Length - no ssl - no file", "http://httpbin.org",
+        std::bind(testGet, _1, _2, false, _3, _4)},
+       {"GET Content-Length - no ssl - file", "http://httpbin.org",
+        std::bind(testGet, _1, _2, true, _3, _4)},
+       {"GET Content-Length - ssl - no file", "https://httpbin.org",
+        std::bind(testGet, _1, _2, false, _3, _4)},
+       {"GET Content-Length - ssl - file", "https://httpbin.org",
+        std::bind(testGet, _1, _2, true, _3, _4)},
+       // HTTP chunked get
+       {"GET CHUNKED - no ssl - no file", "http://httpbin.org",
+        std::bind(testChunkedGet, _1, _2, false, _3, _4)},
+       {"GET CHUNKED - no ssl - file", "http://httpbin.org",
+        std::bind(testChunkedGet, _1, _2, true, _3, _4)},
+       {"GET CHUNKED - ssl - no file", "https://httpbin.org",
+        std::bind(testChunkedGet, _1, _2, false, _3, _4)},
+       {"GET CHUNKED - ssl - file", "https://httpbin.org",
+        std::bind(testChunkedGet, _1, _2, true, _3, _4)},
+       // Delete
+       {"DELETE - no ssl", "http://httpbin.org",
+        std::bind(testDelete, _1, _2, false, _3, _4)},
+       {"DELETE - ssl", "https://httpbin.org",
+        std::bind(testDelete, _1, _2, false, _3, _4)},
+       // Put
+       {"PUT - no ssl - no file", "http://httpbin.org",
+        std::bind(testPut, _1, _2, false, _3, _4)},
+       {"PUT - no ssl - file", "http://httpbin.org",
+        std::bind(testPut, _1, _2, true, _3, _4)},
+       {"PUT - ssl - no file", "https://httpbin.org",
+        std::bind(testPut, _1, _2, false, _3, _4)},
+       {"PUT - ssl - file", "https://httpbin.org",
+        std::bind(testPut, _1, _2, true, _3, _4)},
+       // Post
+       {"POST - no ssl - no file", "http://httpbin.org",
+        std::bind(testPut, _1, _2, false, _3, _4)},
+       {"POST - no ssl - file", "http://httpbin.org",
+        std::bind(testPut, _1, _2, true, _3, _4)},
+       {"POST - ssl - no file", "https://httpbin.org",
+        std::bind(testPut, _1, _2, false, _3, _4)},
+       {"POST - ssl - file", "https://httpbin.org",
+        std::bind(testPut, _1, _2, true, _3, _4)},
+       // HTTP get gzipped content
+       {"GET gzip -Length - no ssl - no file", "http://httpbin.org",
+        std::bind(testGZIPGet, _1, _2, false, _3, _4)},
+       {"GET gzip -Length - no ssl - file", "http://httpbin.org",
+        std::bind(testGZIPGet, _1, _2, true, _3, _4)},
+       {"GET gzip -Length - ssl - no file", "https://httpbin.org",
+        std::bind(testGZIPGet, _1, _2, false, _3, _4)},
+       {"GET gzip -Length - ssl - file", "https://httpbin.org",
+        std::bind(testGZIPGet, _1, _2, true, _3, _4)}});
 
-  };
-
-  RESTClient::JobRunner jobs(io_service, 4);
+  RESTClient::JobDistributor jobs(4);
 
   // Parse args for regexes
   std::vector<boost::regex> regexs;
@@ -249,18 +219,20 @@ int main(int argc, char *argv[]) {
     regexs.push_back(boost::regex(argv[i]));
 
   if (regexs.size() != 0)
-    for (auto &pair : tests) {
+    for (auto &job : tests) {
       for (auto &regex : regexs)
-        if (boost::regex_search(pair.first, regex)) {
-          jobs.addJob(pair.first, pair.second);
+        if (boost::regex_search(job.name, regex)) {
+          jobs.addJob(job.name, job.hostname, job.work);
           break;
         }
     }
   else {
-    for (auto &pair : tests)
-      jobs.addJob(pair.first, pair.second);
+    for (auto &job : tests)
+      jobs.addJob(job.name, job.hostname, job.work);
   }
 
-  io_service.run();
+  auto services = RESTClient::Services::instance();
+
+  services->io_service.run();
   return 0;
 }
