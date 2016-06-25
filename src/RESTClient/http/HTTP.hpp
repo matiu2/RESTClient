@@ -80,7 +80,9 @@ public:
   HTTPResponse postStream(std::string path, std::istream& data);
   HTTPResponse patch(std::string path, std::string data);
   bool is_open() const; // Return true if the connection is open
-  void close(); // Close the connection
+  /// WARNING: This is the only blocking function, and must be called before
+  /// shutting down. It'll wait for the SSL shutdown procedure
+  void close();
 };
 
 } /* HTTP */

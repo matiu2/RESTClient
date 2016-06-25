@@ -119,7 +119,8 @@ HTTP::HTTP(std::string aHostname, asio::yield_context yield)
   is_ssl = boost::equal(protocol, std::string("https"));
   auto hostFound = boost::make_iterator_range(found.end(), aHostname.end());
   boost::copy(hostFound, std::back_inserter(hostname));
-  LOG_TRACE("HTTP constructor - protocol: " << protocol << " - hostname: " << hostname);
+  LOG_TRACE("HTTP constructor - protocol: " << protocol
+                                            << " - hostname: " << hostname);
   // Set up
   ssl_context.set_default_verify_paths();
   sslStream->set_verify_mode(ssl::verify_peer);
@@ -134,7 +135,15 @@ HTTP::HTTP(HTTP &&other)
   LOG_TRACE("HTTP move constructor: " << hostname);
 }
 
-HTTP::~HTTP() { close(); }
+HTTP::~HTTP() {
+  const char *ending(" should have been closed before destruction");
+  if (sslStream->lowest_layer().is_open()) {
+    LOG_FATAL("HTTP SSL Connection to " << hostname << ending);
+  }
+  if (socket.is_open()) {
+    LOG_FATAL("HTTP socket Connection to " << hostname << ending);
+  }
+}
 
 /// Handles an HTTP action (verb) GET/POST/ etc..
 HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
@@ -158,12 +167,13 @@ HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
   return result;
 }
 
-
 void HTTP::readHTTPReply(HTTPResponse &result) {
   if (is_ssl)
-    RESTClient::readHTTPReply(result, *sslStream, yield, std::bind(&HTTP::close, this));
+    RESTClient::readHTTPReply(result, *sslStream, yield,
+                              std::bind(&HTTP::close, this));
   else
-    RESTClient::readHTTPReply(result, socket, yield, std::bind(&HTTP::close, this));
+    RESTClient::readHTTPReply(result, socket, yield,
+                              std::bind(&HTTP::close, this));
 }
 
 std::string HTTPError::lookupCode(int code) {

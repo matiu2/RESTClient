@@ -22,6 +22,7 @@ struct JobRunner {
 
   std::queue<QueuedJob> jobs;
   JobRunner(std::string hostname, size_t maxConcurrentJobs = 8);
+  ~JobRunner();
   void addJob(std::string name, JobFunction job);
   void startJob();
   /// Starts a job if one is avalable and we are below maxConcurrentJobs

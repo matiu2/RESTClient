@@ -2,7 +2,7 @@
 #include <RESTClient/http/HTTP.hpp>
 #include <RESTClient/base/logger.hpp>
 
-#include <vector>
+#include <list>
 #include <boost/algorithm/string/predicate.hpp>
 
 namespace RESTClient {
@@ -18,18 +18,21 @@ struct MonitoredConnection {
 class ConnectionUseSentry {
 private:
   bool iOwnIt = true;
+  std::function<bool()> shouldClose;
   MonitoredConnection &_connection;
 
 public:
-  ConnectionUseSentry(MonitoredConnection &_connection)
-      : _connection(_connection) {
+  /// onDone will be called in the constructor
+  ConnectionUseSentry(MonitoredConnection &_connection,
+                      std::function<bool()> shouldClose)
+      : shouldClose(shouldClose), _connection(_connection) {
     LOG_TRACE("ConnectionUseSentry constructor");
     assert(_connection.inUse == false);
     _connection.inUse = true;
   }
   ConnectionUseSentry(const ConnectionUseSentry &other) = delete;
   ConnectionUseSentry(ConnectionUseSentry &&other)
-      : _connection(other._connection) {
+      : iOwnIt(true), _connection(other._connection) {
     LOG_TRACE("ConnectionUseSentry move constructor");
     other.iOwnIt = false;
   }
@@ -37,6 +40,8 @@ public:
     LOG_TRACE("ConnectionUseSentry detstructor. iOwnIt = " << iOwnIt);
     if (iOwnIt)
       _connection.inUse = false;
+    if (shouldClose())
+      _connection.connection.close();
   }
   RESTClient::HTTP &connection() {
     LOG_TRACE("ConnectionUseSentry::connection()");
@@ -47,7 +52,7 @@ public:
 class ConnectionPool {
 private:
   // Connection pool, true means it's in use, false means it's available
-  std::vector<MonitoredConnection> connections;
+  std::list<MonitoredConnection> connections;
   const std::string hostname;
 public: 
   /**
@@ -57,17 +62,50 @@ public:
     LOG_TRACE("ConnectionPool constructor: " << hostname);
   }
 
-  ConnectionUseSentry getSentry(asio::yield_context yield) {
+  ~ConnectionPool() {
+    // The connections must be closed inside of a coroutine because there's some
+    // time where it waits for the ssl shutdown
+    if (!connections.empty()) {
+      LOG_FATAL("Connections should be closed before the pool is shutdown. "
+                "Call cleanup() first. We have "
+                << connections.size() << " existing connections still");
+    }
+  }
+
+  /// neededConnections is the foreseeable amount of connections we'll need in the future
+  /// If it's below the amount in the pool, we'll close this connection after use
+  ConnectionUseSentry getSentry(asio::yield_context yield, std::function<size_t()> getNeededConnections) {
     LOG_TRACE("ConnectionPool::getSentry: " << hostname);
     RESTClient::HTTP* result = nullptr;
-    for (MonitoredConnection& result : connections)
-      if (!result.inUse)
-        return ConnectionUseSentry(connections.back());
+    // Remove closed connections from the pool
+    boost::remove_erase_if(connections, [](MonitoredConnection& connection) {
+      connection.connection.is_open();
+    };
+    // Return if the sentry should close the connection when it's done
+    auto shouldClose = [this, getNeededConnections]() {
+      return getNeededConnections() < connections.size();
+    };
+    for (auto &result : connections) {
+      if (!result->inUse)
+        return ConnectionUseSentry(*result, shouldClose);
+    }
     // If we get here, we couldn't find a connection, we'll just create one
     LOG_TRACE("ConnectionPool::getSentry .. creating connection: " << hostname);
-    MonitoredConnection mon{false, {hostname, yield}};
-    connections.emplace_back(std::move(mon));
-    return ConnectionUseSentry(connections.back());
+    connections.emplace_back(new MonitoredConnection{false, {hostname, yield}});
+    return ConnectionUseSentry(*connections.back(), shouldClose);
+  }
+
+  /// Close all connections
+  void cleanup(asio::yield_context yield) {
+    try {
+      for (auto &connection : connections)
+        connection->connection.close(yield);
+      connections.clear();
+    } catch (std::exception &e) {
+      LOG_ERROR("Exception while closing connection pool: " << e.what());
+    } catch (...) {
+      LOG_ERROR("Unknown exception while closing connection pool");
+    }
   }
 };
 
