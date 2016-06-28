@@ -1,51 +1,45 @@
 #pragma once
+
 #include <RESTClient/http/HTTP.hpp>
 #include <RESTClient/base/logger.hpp>
+#include <RESTClient/http/MonitoredConnection.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 #include <list>
 #include <boost/algorithm/string/predicate.hpp>
 
 namespace RESTClient {
 
-/// A connection, with an inUse tag (so we can reuse the connection)
-struct MonitoredConnection {
-  bool inUse = false;
-  RESTClient::HTTP connection;
-};
-
 /// A sentry that 'un-uses' the connection after we've done with it, so that
 /// someone else can pick it up later
 class ConnectionUseSentry {
 private:
   bool iOwnIt = true;
-  std::function<bool()> shouldClose;
-  MonitoredConnection &_connection;
+  MonitoredConnection &monitoredConnection;
 
 public:
   /// onDone will be called in the constructor
-  ConnectionUseSentry(MonitoredConnection &_connection,
-                      std::function<bool()> shouldClose)
-      : shouldClose(shouldClose), _connection(_connection) {
+  ConnectionUseSentry(MonitoredConnection &monitoredConnection,
+                      asio::yield_context &yield)
+      : monitoredConnection(monitoredConnection) {
     LOG_TRACE("ConnectionUseSentry constructor");
-    assert(_connection.inUse == false);
-    _connection.inUse = true;
+    assert(monitoredConnection.inUse() == false);
+    monitoredConnection.use(yield);
   }
   ConnectionUseSentry(const ConnectionUseSentry &other) = delete;
   ConnectionUseSentry(ConnectionUseSentry &&other)
-      : iOwnIt(true), _connection(other._connection) {
+      : iOwnIt(true), monitoredConnection(other.monitoredConnection) {
     LOG_TRACE("ConnectionUseSentry move constructor");
     other.iOwnIt = false;
   }
   ~ConnectionUseSentry() {
     LOG_TRACE("ConnectionUseSentry detstructor. iOwnIt = " << iOwnIt);
     if (iOwnIt)
-      _connection.inUse = false;
-    if (shouldClose())
-      _connection.connection.close();
+      monitoredConnection.release();
   }
-  RESTClient::HTTP &connection() {
+  MonitoredConnection &connection() {
     LOG_TRACE("ConnectionUseSentry::connection()");
-    return _connection.connection;
+    return monitoredConnection;
   }
 };
 
@@ -58,13 +52,14 @@ public:
   /**
   * @param hostname must include the http:// or https://
   */
-  ConnectionPool(std::string hostname) : hostname(hostname) {
+  ConnectionPool(std::string hostname) : connections(), hostname(hostname) {
     LOG_TRACE("ConnectionPool constructor: " << hostname);
   }
 
   ~ConnectionPool() {
     // The connections must be closed inside of a coroutine because there's some
     // time where it waits for the ssl shutdown
+    boost::remove_erase_if(connections, [](auto& conn) { return !conn.is_open(); });
     if (!connections.empty()) {
       LOG_FATAL("Connections should be closed before the pool is shutdown. "
                 "Call cleanup() first. We have "
@@ -72,40 +67,32 @@ public:
     }
   }
 
-  /// neededConnections is the foreseeable amount of connections we'll need in the future
-  /// If it's below the amount in the pool, we'll close this connection after use
-  ConnectionUseSentry getSentry(asio::yield_context yield, std::function<size_t()> getNeededConnections) {
+  /// neededConnections is the foreseeable amount of connections we'll need in
+  /// the future
+  /// If it's below the amount in the pool, we'll close this connection after
+  /// use
+  ConnectionUseSentry getSentry(asio::yield_context yield) {
     LOG_TRACE("ConnectionPool::getSentry: " << hostname);
-    RESTClient::HTTP* result = nullptr;
+    RESTClient::HTTP *result = nullptr;
     // Remove closed connections from the pool
-    boost::remove_erase_if(connections, [](MonitoredConnection& connection) {
-      connection.connection.is_open();
-    };
+    boost::remove_erase_if(connections, [](auto& conn) { return !conn.is_open(); });
+#ifndef NDEBUG
+    for (auto& conn : connections)
+      assert(conn.is_open());
+#endif
     // Return if the sentry should close the connection when it's done
-    auto shouldClose = [this, getNeededConnections]() {
-      return getNeededConnections() < connections.size();
-    };
     for (auto &result : connections) {
-      if (!result->inUse)
-        return ConnectionUseSentry(*result, shouldClose);
+      if (!result.inUse())
+        return ConnectionUseSentry(result, yield);
     }
     // If we get here, we couldn't find a connection, we'll just create one
     LOG_TRACE("ConnectionPool::getSentry .. creating connection: " << hostname);
-    connections.emplace_back(new MonitoredConnection{false, {hostname, yield}});
-    return ConnectionUseSentry(*connections.back(), shouldClose);
+    connections.emplace_back(MonitoredConnection(hostname));
+    return ConnectionUseSentry(connections.back(), yield);
   }
-
-  /// Close all connections
-  void cleanup(asio::yield_context yield) {
-    try {
-      for (auto &connection : connections)
-        connection->connection.close(yield);
-      connections.clear();
-    } catch (std::exception &e) {
-      LOG_ERROR("Exception while closing connection pool: " << e.what());
-    } catch (...) {
-      LOG_ERROR("Unknown exception while closing connection pool");
-    }
+  void cleanup() {
+    // Remove closed connections from the pool
+    boost::remove_erase_if(connections, [](auto& conn) { return !conn.is_open(); });
   }
 };
 

@@ -14,7 +14,7 @@ using namespace boost;
 
 /// Runs all the jobs for a certain hostname
 struct JobRunner {
-  std::shared_ptr<Services> services = Services::instance();
+  Services* services = Services::instance();
   std::string hostname;
   ConnectionPool connections;
   const size_t maxConcurrentJobs;
@@ -22,7 +22,6 @@ struct JobRunner {
 
   std::queue<QueuedJob> jobs;
   JobRunner(std::string hostname, size_t maxConcurrentJobs = 8);
-  ~JobRunner();
   void addJob(std::string name, JobFunction job);
   void startJob();
   /// Starts a job if one is avalable and we are below maxConcurrentJobs

@@ -53,8 +53,8 @@ void readHeaders(std::istream &data, Headers &headers,
 }
 
 template <typename Connection>
-void readHTTPReply(HTTPResponse &result, Connection &connection,
-                   asio::yield_context &yield, std::function<void()> close) {
+void readHTTPReply(HTTPResponse &result, asio::yield_context &yield,
+                   Connection &connection, std::function<void()> close) {
   size_t contentLength = 0;
   // Copy the data into a line
   bool keepAlive = true; // All http 1.1 connections are keepalive unless

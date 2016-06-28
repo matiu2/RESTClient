@@ -1,19 +1,22 @@
 #pragma once
 
-#include <RESTClient/http/HTTP.hpp>
+#include <RESTClient/http/MonitoredConnection.hpp>
+
+#include <cassert>
 
 namespace RESTClient {
 
 using JobFunction =
     std::function<bool(const std::string &name, const std::string &hostname,
-                       asio::yield_context yield, RESTClient::HTTP &server)>;
+                       MonitoredConnection &server)>;
 
 struct QueuedJob {
   std::string name;
   const std::string &hostname;
   JobFunction work;
-  bool operator()(asio::yield_context yield, RESTClient::HTTP &server) const {
-    return work(name, hostname, yield, server);
+  bool operator()(MonitoredConnection &server) const {
+    assert(server.inUse());
+    return work(name, hostname, server);
   }
 };
 

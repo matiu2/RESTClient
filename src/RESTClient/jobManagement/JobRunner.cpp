@@ -50,8 +50,13 @@ void JobRunner::startJob() {
                       std::bind(&JobRunner::checkStartJob, this));
       LOG_DEBUG("Starting Job: " << job.name);
       ConnectionUseSentry sentry(connections.getSentry(yield));
-      job(yield, sentry.connection());
+      job(sentry.connection());
       LOG_INFO("Job Completed: " << job.name);
+      // If we don't have any more jobs, we won't be re-using this connection
+      if (jobs.size() == 0) {
+        sentry.connection().close();
+        connections.cleanup();
+      }
     } catch (std::exception &e) {
       LOG_ERROR("Job threw exception: " << job.name << "': " << e.what());
     } catch (...) {

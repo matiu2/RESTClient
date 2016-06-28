@@ -19,7 +19,6 @@
 #include <boost/range/istream_range.hpp>
 #include <boost/range/iterator_range.hpp>
 #include <boost/system/error_code.hpp>
- 
 
 #include <boost/asio/ssl/rfc2818_verification.hpp>
 
@@ -66,8 +65,8 @@ void HTTP::addDefaultHeaders(HTTPRequest &request) {
 /// Transmits a body with 'chunked' transfer-encoding (untested because
 /// httpbin.org doesn't support it, but cloud files API does, we'll have to
 /// write some tests that connect to cloud files api later)
-void chunkedTransmit(filtering_ostream &transmitter, std::istream &data,
-                     asio::yield_context yield) {
+void chunkedTransmit(filtering_ostream &transmitter, asio::yield_context &yield,
+                     std::istream &data) {
   // https://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.6.1
   const size_t bufferSize = 4096;
   char buffer[bufferSize];
@@ -89,17 +88,18 @@ void chunkedTransmit(filtering_ostream &transmitter, std::istream &data,
 /// one go. A negative number indicates that we don't know the size, so it
 /// should be sent in chunked transfer-encoding
 void transmitBody(filtering_ostream &transmitter, HTTPRequest &request,
-                  asio::yield_context yield) {
+                  asio::yield_context &yield) {
   // If we know the body size
   std::istream &body = request.body;
   if (request.body.size() >= 0)
     io::copy(body, transmitter);
   else
-    chunkedTransmit(transmitter, body, yield);
+    chunkedTransmit(transmitter, yield, body);
 }
 
-HTTP::HTTP(std::string aHostname, asio::yield_context yield)
-    : hostname(), services(Services::instance()), yield(yield), is_ssl(false),
+HTTP::HTTP(std::string aHostname)
+    : hostname(), services(Services::instance()),
+      resolver(services->io_service), is_ssl(false),
       ssl_context(services->io_service, ssl::context::sslv23),
       sslStream(
           new ssl::stream<tcp::socket>(services->io_service, ssl_context)),
@@ -129,10 +129,20 @@ HTTP::HTTP(std::string aHostname, asio::yield_context yield)
 
 HTTP::HTTP(HTTP &&other)
     : hostname(std::move(other.hostname)), services(std::move(other.services)),
-      yield(std::move(other.yield)), is_ssl(other.is_ssl),
+      resolver(services->io_service), is_ssl(other.is_ssl),
       ssl_context(std::move(other.ssl_context)),
       sslStream(std::move(other.sslStream)), socket(std::move(other.socket)) {
   LOG_TRACE("HTTP move constructor: " << hostname);
+}
+
+HTTP &HTTP::operator=(HTTP &&other) {
+  hostname = std::move(other.hostname);
+  services = std::move(other.services);
+  is_ssl = other.is_ssl;
+  ssl_context = std::move(other.ssl_context);
+  sslStream = std::move(other.sslStream);
+  socket = std::move(other.socket);
+  return *this;
 }
 
 HTTP::~HTTP() {
@@ -146,8 +156,9 @@ HTTP::~HTTP() {
 }
 
 /// Handles an HTTP action (verb) GET/POST/ etc..
-HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
-  ensureConnection();
+HTTPResponse HTTP::action(HTTPRequest &request, asio::yield_context &yield,
+                          std::string filePath) {
+  ensureConnection(yield);
   addDefaultHeaders(request);
   output << request.verb << " " << request.path << " HTTP/1.1"
          << "\r\n";
@@ -162,18 +173,18 @@ HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
     result.body.initWithFile(filePath);
   transmitBody(output, request, yield);
 
-  readHTTPReply(result);
+  readHTTPReply(result, yield);
 
   return result;
 }
 
-void HTTP::readHTTPReply(HTTPResponse &result) {
+void HTTP::readHTTPReply(HTTPResponse &result, asio::yield_context &yield) {
   if (is_ssl)
-    RESTClient::readHTTPReply(result, *sslStream, yield,
-                              std::bind(&HTTP::close, this));
+    RESTClient::readHTTPReply(result, yield, *sslStream,
+                              std::bind(&HTTP::close, this, yield));
   else
-    RESTClient::readHTTPReply(result, socket, yield,
-                              std::bind(&HTTP::close, this));
+    RESTClient::readHTTPReply(result, yield, socket,
+                              std::bind(&HTTP::close, this, yield));
 }
 
 std::string HTTPError::lookupCode(int code) {
@@ -187,11 +198,12 @@ std::string HTTPError::lookupCode(int code) {
   return std::move(result.str());
 }
 
-void HTTP::ensureConnection() {
+void HTTP::ensureConnection(asio::yield_context &yield) {
   // Resolve if needed
+  tcp::resolver::iterator endpoints;
   if (endpoints == decltype(endpoints)()) {
     assert(services);
-    endpoints = services->resolver.async_resolve(
+    endpoints = resolver.async_resolve(
         {hostname, is_ssl ? "https" : "http"}, yield);
   }
   // Connect if needed
@@ -207,27 +219,27 @@ void HTTP::ensureConnection() {
     if (!socket.is_open())
       asio::async_connect(socket, endpoints, yield);
   }
-  makeOutput();
+  makeOutput(yield);
 }
 
-HTTPResponse HTTP::get(std::string path) {
+HTTPResponse HTTP::get(std::string path, asio::yield_context &yield) {
   HTTPRequest request("GET", path);
-  return action(request);
+  return action(request, yield);
 }
 
-HTTPResponse HTTP::getToFile(std::string serverPath,
+HTTPResponse HTTP::getToFile(std::string serverPath, asio::yield_context &yield,
                              const std::string &filePath) {
   HTTPRequest request("GET", serverPath);
-  return action(request, filePath);
+  return action(request, yield, filePath);
 }
 
-HTTPResponse HTTP::del(std::string path) {
+HTTPResponse HTTP::del(std::string path, asio::yield_context &yield) {
   HTTPRequest request("DELETE", path);
-  return action(request);
+  return action(request, yield);
 }
 
-HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
-                               std::string data) {
+HTTPResponse HTTP::PUT_OR_POST(std::string verb, asio::yield_context &yield,
+                               std::string path, std::string data) {
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   // TODO: use 'action' instead
   output << verb << " " << path << " HTTP/1.1"
@@ -243,25 +255,28 @@ HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
     output << "Content-Length: " << data.size() << "\r\n";
   output << "\r\n";
   HTTPResponse result;
-  ensureConnection();
+  ensureConnection(yield);
   output << data;
-  readHTTPReply(result);
+  readHTTPReply(result, yield);
   return result;
 }
 
-HTTPResponse HTTP::put(const std::string path, std::string data) {
+HTTPResponse HTTP::put(const std::string path, asio::yield_context &yield,
+                       std::string data) {
   LOG_TRACE("PUT " << path << " - " << data);
   HTTPRequest request("PUT", path, {}, data);
-  return action(request);
+  return action(request, yield);
 }
 
-HTTPResponse HTTP::post(const std::string path, std::string data) {
+HTTPResponse HTTP::post(const std::string path, asio::yield_context &yield,
+                        std::string data) {
   LOG_TRACE("POST " << path << " - " << data);
-  return PUT_OR_POST("POST", path, data);
+  return PUT_OR_POST("POST", yield, path, data);
 }
 
-HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb, std::string path,
-                                      std::istream &data) {
+HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb,
+                                      asio::yield_context &yield,
+                                      std::string path, std::istream &data) {
   // TODO: use 'action' instead
   boost::asio::streambuf buf;
   std::ostream request(&buf);
@@ -289,14 +304,14 @@ HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb, std::string path,
                     boost::asio::buffer_size(part));
 #endif
   HTTPResponse result;
-  ensureConnection();
+  ensureConnection(yield);
   io::copy(buf, output);
   io::copy(data, output);
-  readHTTPReply(result);
+  readHTTPReply(result, yield);
   return result;
 }
 
-void HTTP::makeOutput() {
+void HTTP::makeOutput(asio::yield_context &yield) {
   output.reset();
 #ifdef HTTP_ON_STD_OUT
   output.push(CopyOutgoingToCout());
@@ -307,12 +322,14 @@ void HTTP::makeOutput() {
     output.push(make_output_to_net(socket, yield));
 }
 
-HTTPResponse HTTP::putStream(std::string path, std::istream &data) {
-  return PUT_OR_POST_STREAM("PUT", path, data);
+HTTPResponse HTTP::putStream(std::string path, asio::yield_context &yield,
+                             std::istream &data) {
+  return PUT_OR_POST_STREAM("PUT", yield, path, data);
 }
 
-HTTPResponse HTTP::postStream(std::string path, std::istream &data) {
-  return PUT_OR_POST_STREAM("POST", path, data);
+HTTPResponse HTTP::postStream(std::string path, asio::yield_context &yield,
+                              std::istream &data) {
+  return PUT_OR_POST_STREAM("POST", yield, path, data);
 }
 
 // HTTPResponse HTTP::patch(const std::string path, std::string data);
@@ -324,7 +341,7 @@ bool HTTP::is_open() const {
     return socket.is_open();
 }
 
-void HTTP::close() {
+void HTTP::close(asio::yield_context &yield) {
   if (sslStream && (sslStream->lowest_layer().is_open())) {
     boost::system::error_code ec;
     sslStream->async_shutdown(yield[ec]);
