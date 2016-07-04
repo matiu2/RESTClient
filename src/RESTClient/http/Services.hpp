@@ -8,13 +8,11 @@ namespace RESTClient {
 using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
 
-struct Services;
-
 struct Services {
   asio::io_service io_service;
-  static Services* instance();
+  tcp::resolver resolver;
   Services();
-  ~Services();
+  static Services& instance();
 };
 
   

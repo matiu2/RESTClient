@@ -65,8 +65,7 @@ void HTTP::addDefaultHeaders(HTTPRequest &request) {
 /// Transmits a body with 'chunked' transfer-encoding (untested because
 /// httpbin.org doesn't support it, but cloud files API does, we'll have to
 /// write some tests that connect to cloud files api later)
-void chunkedTransmit(filtering_ostream &transmitter, asio::yield_context &yield,
-                     std::istream &data) {
+void chunkedTransmit(filtering_ostream &transmitter, std::istream &data) {
   // https://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.6.1
   const size_t bufferSize = 4096;
   char buffer[bufferSize];
@@ -94,60 +93,40 @@ void transmitBody(filtering_ostream &transmitter, HTTPRequest &request,
   if (request.body.size() >= 0)
     io::copy(body, transmitter);
   else
-    chunkedTransmit(transmitter, yield, body);
+    chunkedTransmit(transmitter, body);
 }
 
-HTTP::HTTP(std::string aHostname)
-    : hostname(), services(Services::instance()),
-      resolver(services->io_service), is_ssl(false),
-      ssl_context(services->io_service, ssl::context::sslv23),
-      sslStream(
-          new ssl::stream<tcp::socket>(services->io_service, ssl_context)),
-      socket(services->io_service) {
-  LOG_TRACE("HTTP constructor: " << aHostname);
+HTTP::HTTP(const std::string &rawHostname, asio::yield_context yield)
+    : hostname(""), services(Services::instance()), yield(yield),
+      is_ssl(false), ssl_context(services.io_service, ssl::context::sslv23),
+      sslStream(services.io_service, ssl_context), socket(services.io_service) {
+  LOG_TRACE("HTTP constructor: " << rawHostname);
   // hostname when passed to us contains http:// or https://
   // we need to read that to set 'is_ssl'
   const std::string delim("://");
-  boost::iterator_range<std::string::iterator> found =
-      boost::find_first(aHostname, delim);
+  boost::iterator_range<std::string::const_iterator> found =
+      boost::find_first(rawHostname, delim);
   if (!boost::equal(found, delim)) {
-    LOG_ERROR("Expected aHostname to start with "
+    LOG_ERROR("Expected hostname to start with "
               "'http://' or 'https://' but it doesn't: "
-              << aHostname << " - found: " << found);
+              << rawHostname << " - found: " << found);
   }
-  auto protocol = boost::make_iterator_range(aHostname.begin(), found.begin());
+  auto protocol =
+      boost::make_iterator_range(rawHostname.begin(), found.begin());
   is_ssl = boost::equal(protocol, std::string("https"));
-  auto hostFound = boost::make_iterator_range(found.end(), aHostname.end());
+  auto hostFound = boost::make_iterator_range(found.end(), rawHostname.end());
   boost::copy(hostFound, std::back_inserter(hostname));
   LOG_TRACE("HTTP constructor - protocol: " << protocol
                                             << " - hostname: " << hostname);
   // Set up
   ssl_context.set_default_verify_paths();
-  sslStream->set_verify_mode(ssl::verify_peer);
-  sslStream->set_verify_callback(ssl::rfc2818_verification(hostname));
-}
-
-HTTP::HTTP(HTTP &&other)
-    : hostname(std::move(other.hostname)), services(std::move(other.services)),
-      resolver(services->io_service), is_ssl(other.is_ssl),
-      ssl_context(std::move(other.ssl_context)),
-      sslStream(std::move(other.sslStream)), socket(std::move(other.socket)) {
-  LOG_TRACE("HTTP move constructor: " << hostname);
-}
-
-HTTP &HTTP::operator=(HTTP &&other) {
-  hostname = std::move(other.hostname);
-  services = std::move(other.services);
-  is_ssl = other.is_ssl;
-  ssl_context = std::move(other.ssl_context);
-  sslStream = std::move(other.sslStream);
-  socket = std::move(other.socket);
-  return *this;
+  sslStream.set_verify_mode(ssl::verify_peer);
+  sslStream.set_verify_callback(ssl::rfc2818_verification(hostname));
 }
 
 HTTP::~HTTP() {
   const char *ending(" should have been closed before destruction");
-  if (sslStream->lowest_layer().is_open()) {
+  if (sslStream.lowest_layer().is_open()) {
     LOG_FATAL("HTTP SSL Connection to " << hostname << ending);
   }
   if (socket.is_open()) {
@@ -156,9 +135,8 @@ HTTP::~HTTP() {
 }
 
 /// Handles an HTTP action (verb) GET/POST/ etc..
-HTTPResponse HTTP::action(HTTPRequest &request, asio::yield_context &yield,
-                          std::string filePath) {
-  ensureConnection(yield);
+HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
+  ensureConnection();
   addDefaultHeaders(request);
   output << request.verb << " " << request.path << " HTTP/1.1"
          << "\r\n";
@@ -173,18 +151,18 @@ HTTPResponse HTTP::action(HTTPRequest &request, asio::yield_context &yield,
     result.body.initWithFile(filePath);
   transmitBody(output, request, yield);
 
-  readHTTPReply(result, yield);
+  readHTTPReply(result);
 
   return result;
 }
 
-void HTTP::readHTTPReply(HTTPResponse &result, asio::yield_context &yield) {
+void HTTP::readHTTPReply(HTTPResponse &result) {
   if (is_ssl)
-    RESTClient::readHTTPReply(result, yield, *sslStream,
-                              std::bind(&HTTP::close, this, yield));
+    RESTClient::readHTTPReply(result, yield, sslStream,
+                              std::bind(&HTTP::close, this));
   else
     RESTClient::readHTTPReply(result, yield, socket,
-                              std::bind(&HTTP::close, this, yield));
+                              std::bind(&HTTP::close, this));
 }
 
 std::string HTTPError::lookupCode(int code) {
@@ -198,48 +176,46 @@ std::string HTTPError::lookupCode(int code) {
   return std::move(result.str());
 }
 
-void HTTP::ensureConnection(asio::yield_context &yield) {
+void HTTP::ensureConnection() {
   // Resolve if needed
   tcp::resolver::iterator endpoints;
   if (endpoints == decltype(endpoints)()) {
-    assert(services);
-    endpoints = resolver.async_resolve(
+    endpoints = services.resolver.async_resolve(
         {hostname, is_ssl ? "https" : "http"}, yield);
   }
   // Connect if needed
   if (is_ssl) {
-    assert(sslStream);
-    if (!sslStream->lowest_layer().is_open()) {
-      asio::async_connect(sslStream->lowest_layer(), endpoints, yield);
+    if (!sslStream.lowest_layer().is_open()) {
+      asio::async_connect(sslStream.lowest_layer(), endpoints, yield);
       // Perform SSL handshake and verify the remote host's
       // certificate.
-      sslStream->async_handshake(ssl::stream<tcp::socket>::client, yield);
+      sslStream.async_handshake(ssl::stream<tcp::socket>::client, yield);
     }
   } else {
     if (!socket.is_open())
       asio::async_connect(socket, endpoints, yield);
   }
-  makeOutput(yield);
+  makeOutput();
 }
 
-HTTPResponse HTTP::get(std::string path, asio::yield_context &yield) {
+HTTPResponse HTTP::get(std::string path) {
   HTTPRequest request("GET", path);
-  return action(request, yield);
+  return action(request);
 }
 
-HTTPResponse HTTP::getToFile(std::string serverPath, asio::yield_context &yield,
+HTTPResponse HTTP::getToFile(std::string serverPath,
                              const std::string &filePath) {
   HTTPRequest request("GET", serverPath);
-  return action(request, yield, filePath);
+  return action(request, filePath);
 }
 
-HTTPResponse HTTP::del(std::string path, asio::yield_context &yield) {
+HTTPResponse HTTP::del(std::string path) {
   HTTPRequest request("DELETE", path);
-  return action(request, yield);
+  return action(request);
 }
 
-HTTPResponse HTTP::PUT_OR_POST(std::string verb, asio::yield_context &yield,
-                               std::string path, std::string data) {
+HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
+                               std::string data) {
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   // TODO: use 'action' instead
   output << verb << " " << path << " HTTP/1.1"
@@ -255,28 +231,25 @@ HTTPResponse HTTP::PUT_OR_POST(std::string verb, asio::yield_context &yield,
     output << "Content-Length: " << data.size() << "\r\n";
   output << "\r\n";
   HTTPResponse result;
-  ensureConnection(yield);
+  ensureConnection();
   output << data;
-  readHTTPReply(result, yield);
+  readHTTPReply(result);
   return result;
 }
 
-HTTPResponse HTTP::put(const std::string path, asio::yield_context &yield,
-                       std::string data) {
+HTTPResponse HTTP::put(const std::string path, std::string data) {
   LOG_TRACE("PUT " << path << " - " << data);
   HTTPRequest request("PUT", path, {}, data);
-  return action(request, yield);
+  return action(request);
 }
 
-HTTPResponse HTTP::post(const std::string path, asio::yield_context &yield,
-                        std::string data) {
+HTTPResponse HTTP::post(const std::string path, std::string data) {
   LOG_TRACE("POST " << path << " - " << data);
-  return PUT_OR_POST("POST", yield, path, data);
+  return PUT_OR_POST("POST", path, data);
 }
 
-HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb,
-                                      asio::yield_context &yield,
-                                      std::string path, std::istream &data) {
+HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb, std::string path,
+                                      std::istream &data) {
   // TODO: use 'action' instead
   boost::asio::streambuf buf;
   std::ostream request(&buf);
@@ -304,48 +277,46 @@ HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb,
                     boost::asio::buffer_size(part));
 #endif
   HTTPResponse result;
-  ensureConnection(yield);
+  ensureConnection();
   io::copy(buf, output);
   io::copy(data, output);
-  readHTTPReply(result, yield);
+  readHTTPReply(result);
   return result;
 }
 
-void HTTP::makeOutput(asio::yield_context &yield) {
+void HTTP::makeOutput() {
   output.reset();
 #ifdef HTTP_ON_STD_OUT
   output.push(CopyOutgoingToCout());
 #endif
   if (is_ssl)
-    output.push(make_output_to_net(*sslStream, yield));
+    output.push(make_output_to_net(sslStream, yield));
   else
     output.push(make_output_to_net(socket, yield));
 }
 
-HTTPResponse HTTP::putStream(std::string path, asio::yield_context &yield,
-                             std::istream &data) {
-  return PUT_OR_POST_STREAM("PUT", yield, path, data);
+HTTPResponse HTTP::putStream(std::string path, std::istream &data) {
+  return PUT_OR_POST_STREAM("PUT", path, data);
 }
 
-HTTPResponse HTTP::postStream(std::string path, asio::yield_context &yield,
-                              std::istream &data) {
-  return PUT_OR_POST_STREAM("POST", yield, path, data);
+HTTPResponse HTTP::postStream(std::string path, std::istream &data) {
+  return PUT_OR_POST_STREAM("POST", path, data);
 }
 
 // HTTPResponse HTTP::patch(const std::string path, std::string data);
 
 bool HTTP::is_open() const {
   if (is_ssl)
-    return sslStream->lowest_layer().is_open();
+    return sslStream.lowest_layer().is_open();
   else
     return socket.is_open();
 }
 
-void HTTP::close(asio::yield_context &yield) {
-  if (sslStream && (sslStream->lowest_layer().is_open())) {
+void HTTP::close() {
+  if (sslStream.lowest_layer().is_open()) {
     boost::system::error_code ec;
-    sslStream->async_shutdown(yield[ec]);
-    sslStream->lowest_layer().close();
+    sslStream.async_shutdown(yield[ec]);
+    sslStream.lowest_layer().close();
     // Short read is not a real error. Everything else is.
     if (ec.category() == asio::error::get_ssl_category() &&
         ec.value() == ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ))

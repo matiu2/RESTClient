@@ -1,7 +1,7 @@
 #include <RESTClient/base/logger.hpp>
 #include <RESTClient/http/HTTP.hpp>
 #include <RESTClient/http/Services.hpp>
-#include <RESTClient/jobManagement/JobDistributor.hpp>
+#include <RESTClient/jobManagement/JobRunner.hpp>
 
 #include <iostream>
 #include <sstream>
@@ -14,7 +14,7 @@ using namespace boost::asio::ip; // to get 'tcp::'
 namespace algo = boost::algorithm;
 
 bool testGet(const std::string &name, const std::string &hostname,
-             RESTClient::MonitoredConnection &server, bool toFile) {
+             RESTClient::HTTP &server, bool toFile) {
   LOG_TRACE("testGet: " << name << " starting....")
   RESTClient::HTTPResponse response;
   if (toFile) {
@@ -39,7 +39,7 @@ bool testGet(const std::string &name, const std::string &hostname,
 }
 
 bool testPut(const std::string &name, const std::string &hostname,
-             RESTClient::MonitoredConnection &server, bool fromFile) {
+             RESTClient::HTTP &server, bool fromFile) {
   LOG_TRACE(name << " starting...");
   std::string source("This is some data");
   if (fromFile) {
@@ -55,7 +55,7 @@ bool testPut(const std::string &name, const std::string &hostname,
 }
 
 bool testPost(const std::string &name, const std::string &hostname,
-              RESTClient::MonitoredConnection &server, bool fromFile) {
+              RESTClient::HTTP &server, bool fromFile) {
   LOG_TRACE(name << " starting....")
   std::string source("This is some data");
   if (fromFile) {
@@ -71,7 +71,7 @@ bool testPost(const std::string &name, const std::string &hostname,
 }
 
 bool testChunkedGet(const std::string &name, const std::string &hostname,
-                    RESTClient::MonitoredConnection &server, bool toFile) {
+                    RESTClient::HTTP &server, bool toFile) {
   LOG_TRACE(name << " starting....")
   const int size = 1024;
   const int chunk_size = 80;
@@ -118,7 +118,7 @@ bool testChunkedGet(const std::string &name, const std::string &hostname,
 }
 
 bool testDelete(const std::string &name, const std::string &hostname,
-                RESTClient::MonitoredConnection &server, bool fromFile) {
+                RESTClient::HTTP &server, bool fromFile) {
   LOG_TRACE(name << " starting....")
   RESTClient::HTTPResponse response = server.del("/delete");
   std::string shouldContain("httpbin.org/delete");
@@ -129,7 +129,7 @@ bool testDelete(const std::string &name, const std::string &hostname,
 }
 
 bool testGZIPGet(const std::string &name, const std::string &hostname,
-                 RESTClient::MonitoredConnection &server, bool toFile) {
+                 RESTClient::HTTP &server, bool toFile) {
   LOG_TRACE(name << " starting....")
   RESTClient::HTTPResponse response;
   if (toFile) {
@@ -151,8 +151,6 @@ bool testGZIPGet(const std::string &name, const std::string &hostname,
 }
 
 int main(int argc, char *argv[]) {
-
-  RESTClient::Services services;
 
   using namespace std::placeholders;
 
@@ -208,7 +206,7 @@ int main(int argc, char *argv[]) {
        {"GET gzip -Length - ssl - file", "https://httpbin.org",
         std::bind(testGZIPGet, _1, _2, _3, true)}});
 
-  RESTClient::JobDistributor jobs(4);
+  RESTClient::JobRunner jobs;
 
   // Parse args for regexes
   std::vector<boost::regex> regexs;
@@ -219,15 +217,17 @@ int main(int argc, char *argv[]) {
     for (auto &job : tests) {
       for (auto &regex : regexs)
         if (boost::regex_search(job.name, regex)) {
-          jobs.addJob(job.name, job.hostname, job.work);
+          jobs.queue(job.hostname).emplace(std::move(job));
           break;
         }
     }
   else {
     for (auto &job : tests)
-      jobs.addJob(job.name, job.hostname, job.work);
+      jobs.queue(job.hostname).emplace(std::move(job));
   }
 
-  services.io_service.run();
+  jobs.startProcessing();
+
+  RESTClient::Services::instance().io_service.run();
   return 0;
 }

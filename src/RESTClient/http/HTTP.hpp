@@ -36,27 +36,26 @@ using boost::iostreams::filtering_ostream;
 class HTTP {
 private:
   std::string hostname;
-  Services* services;
-  tcp::resolver resolver;
+  Services& services;
+  asio::yield_context yield;
   bool is_ssl;
   ssl::context ssl_context;
   // Needs to be a unique_ptr, because ssl::stream has no copy and no move
   // powerz, but we want to be able to move HTTP instances
-  std::unique_ptr<ssl::stream<tcp::socket>> sslStream;
+  ssl::stream<tcp::socket> sslStream;
   tcp::socket socket;
   filtering_ostream output;
   size_t incomingByteCounter = 0;
-  void ensureConnection(asio::yield_context &yield);
-  void readHTTPReply(HTTPResponse &result, asio::yield_context &yield);
-  HTTPResponse PUT_OR_POST(std::string verb, asio::yield_context &yield,
-                           std::string path, std::string data);
-  HTTPResponse PUT_OR_POST_STREAM(std::string verb, asio::yield_context &yield,
+  void ensureConnection();
+  void readHTTPReply(HTTPResponse &result);
+  HTTPResponse PUT_OR_POST(std::string verb, std::string path,
+                           std::string data);
+  HTTPResponse PUT_OR_POST_STREAM(std::string verb,
                                   std::string path, std::istream &data);
-  void makeOutput(asio::yield_context& yield);
+  void makeOutput();
 
 public:
-  HTTP(std::string hostname);
-  HTTP(HTTP&& other);
+  HTTP(const std::string &hostname, asio::yield_context yield);
   HTTP(const HTTP&) = delete;
   ~HTTP();
 
@@ -68,28 +67,21 @@ public:
   /// request headers may be modified to add the defaults
   /// By default will read the response to a string, but if you specify
   /// 'filePath' it'll save it to a file
-  HTTPResponse action(HTTPRequest &request, asio::yield_context &yield,
-                      std::string filePath = "");
+  HTTPResponse action(HTTPRequest& request, std::string filePath="");
   // Get a resource from the server. Path is the part after the URL.
   // eg. get("/person/1"); would get http://httpbin.org/person/1
-  HTTPResponse get(std::string path, asio::yield_context &yield);
-  HTTPResponse getToFile(std::string serverPath, asio::yield_context &yield,
-                         const std::string &filePath);
-  HTTPResponse del(std::string path, asio::yield_context &yield);
-  HTTPResponse put(std::string path, asio::yield_context &yield,
-                   std::string data);
-  HTTPResponse putStream(std::string path, asio::yield_context &yield,
-                         std::istream &data);
-  HTTPResponse post(std::string path, asio::yield_context &yield,
-                    std::string data);
-  HTTPResponse postStream(std::string path, asio::yield_context &yield,
-                          std::istream &data);
-  HTTPResponse patch(std::string path, asio::yield_context &yield,
-                     std::string data);
+  HTTPResponse get(std::string path);
+  HTTPResponse getToFile(std::string serverPath, const std::string& filePath);
+  HTTPResponse del(std::string path);
+  HTTPResponse put(std::string path, std::string data);
+  HTTPResponse putStream(std::string path, std::istream& data);
+  HTTPResponse post(std::string path, std::string data);
+  HTTPResponse postStream(std::string path, std::istream& data);
+  HTTPResponse patch(std::string path, std::string data);
   bool is_open() const; // Return true if the connection is open
   /// WARNING: This is the only blocking function, and must be called before
   /// shutting down. It'll wait for the SSL shutdown procedure
-  void close(asio::yield_context &yield);
+  void close();
 };
 
 } /* HTTP */

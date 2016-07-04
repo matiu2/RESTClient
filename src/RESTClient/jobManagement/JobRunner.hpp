@@ -1,11 +1,12 @@
 /// Keeps X amount of jobs running in a single thread using the boost asio job runner
 #pragma once
 
+#include <map>
 #include <queue>
+#include <string>
 
 #include <RESTClient/base/logger.hpp>
 #include <RESTClient/jobManagement/Job.hpp>
-#include <RESTClient/http/ConnectionPool.hpp>
 #include <RESTClient/http/Services.hpp>
 
 namespace RESTClient {
@@ -13,19 +14,16 @@ namespace RESTClient {
 using namespace boost;
 
 /// Runs all the jobs for a certain hostname
-struct JobRunner {
-  Services* services = Services::instance();
-  std::string hostname;
-  ConnectionPool connections;
-  const size_t maxConcurrentJobs;
-  size_t jobsRunningNow = 0;
-
-  std::queue<QueuedJob> jobs;
-  JobRunner(std::string hostname, size_t maxConcurrentJobs = 8);
-  void addJob(std::string name, JobFunction job);
-  void startJob();
-  /// Starts a job if one is avalable and we are below maxConcurrentJobs
-  void checkStartJob();
+class JobRunner {
+public:
+  using JobQueue = std::queue<QueuedJob>;
+private:
+  Services& services = Services::instance();
+  std::map<std::string, JobQueue> queues;
+public:
+  // Map of hostname to job queue
+  JobQueue &queue(const std::string &hostname);
+  void startProcessing(size_t connectionsPerHost = 4);
 };
 
 } /* RESTClient */

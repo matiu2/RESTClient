@@ -75,24 +75,31 @@ public:
     LOG_TRACE("ConnectionPool::getSentry: " << hostname);
     RESTClient::HTTP *result = nullptr;
     // Remove closed connections from the pool
-    boost::remove_erase_if(connections, [](auto& conn) { return !conn.is_open(); });
+    cleanup();
 #ifndef NDEBUG
     for (auto& conn : connections)
       assert(conn.is_open());
 #endif
     // Return if the sentry should close the connection when it's done
     for (auto &result : connections) {
-      if (!result.inUse())
+      if (!result.inUse()) {
+        LOG_TRACE("ConnectionPool::getSentry .. reusing connection: " << hostname);
         return ConnectionUseSentry(result, yield);
+      }
     }
     // If we get here, we couldn't find a connection, we'll just create one
-    LOG_TRACE("ConnectionPool::getSentry .. creating connection: " << hostname);
+    LOG_TRACE("ConnectionPool::getSentry .. creating connection: "
+              << hostname << " - " << connections.size());
     connections.emplace_back(MonitoredConnection(hostname));
+    LOG_TRACE("ConnectionPool::getSentry .. created connection: "
+              << hostname << " - " << connections.size());
     return ConnectionUseSentry(connections.back(), yield);
   }
   void cleanup() {
     // Remove closed connections from the pool
+    LOG_TRACE("ConnectionPool::cleanup .. start: " << connections.size());
     boost::remove_erase_if(connections, [](auto& conn) { return !conn.is_open(); });
+    LOG_TRACE("ConnectionPool::cleanup .. end: " << connections.size());
   }
 };
 
