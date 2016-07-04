@@ -4,15 +4,11 @@
 
 namespace RESTClient {
 
-#if MIN_LOG_LEVEL <= FATAL
 int queueWorkerId = 0;
-#endif
 
 /// Spawns a single worker for a queue (not a thread, but a co-routine)
 void queueWorker(const std::string &hostname, std::queue<QueuedJob> &jobs) {
-#if MIN_LOG_LEVEL <= FATAL
   int myId = queueWorkerId++;
-#endif
   LOG_TRACE("queueWorker: (" << myId << ") " << hostname << " - " << jobs.size());
   asio::spawn(Services::instance().io_service, [&, myId](asio::yield_context yield) {
     LOG_TRACE("queueWorker: (" << myId << ") - job starting: " << hostname
@@ -30,22 +26,12 @@ void queueWorker(const std::string &hostname, std::queue<QueuedJob> &jobs) {
         LOG_INFO("queueWorker: (" << myId << ") - Job Completed: " << hostname
                                   << " - " << job.name);
       } catch (std::exception &e) {
-#if MIN_LOG_LEVEL <= FATAL
         LOG_ERROR("queueWorker: (" << myId << ") - Job threw exception: "
                                    << job.name << "': " << e.what());
-#else
-        LOG_ERROR("queueWorker: - Job threw exception: " << job.name
-                                                         << "': " << e.what());
-#endif
       } catch (...) {
-#if MIN_LOG_LEVEL <= FATAL
         LOG_ERROR("queueWorker: ("
                   << myId << ") - Unknown exception caught while running job '"
                   << job.name);
-#else
-        LOG_ERROR("queueWorker: - Unknown exception caught while running job '"
-                  << job.name);
-#endif
       }
     }
     conn.close();
