@@ -4,11 +4,19 @@
 
 namespace RESTClient {
 
+#if MIN_LOG_LEVEL <= FATAL
+int queueWorkerId = 0;
+#endif
+
 /// Spawns a single worker for a queue (not a thread, but a co-routine)
 void queueWorker(const std::string &hostname, std::queue<QueuedJob> &jobs) {
-  LOG_TRACE("queueWorker: " << hostname << " - " << jobs.size());
-  asio::spawn(Services::instance().io_service, [&](asio::yield_context yield) {
-    LOG_TRACE("queueWorker - job starting: " << hostname << " - " << jobs.size());
+#if MIN_LOG_LEVEL <= FATAL
+  int myId = queueWorkerId++;
+#endif
+  LOG_TRACE("queueWorker: (" << myId << ") " << hostname << " - " << jobs.size());
+  asio::spawn(Services::instance().io_service, [&, myId](asio::yield_context yield) {
+    LOG_TRACE("queueWorker: (" << myId << ") - job starting: " << hostname
+                               << " - " << jobs.size());
     if (jobs.size() == 0)
       return;
     HTTP conn(hostname, yield);
@@ -16,13 +24,28 @@ void queueWorker(const std::string &hostname, std::queue<QueuedJob> &jobs) {
       QueuedJob job = std::move(jobs.front());
       jobs.pop();
       try {
-        LOG_DEBUG("Starting Job: " << hostname << " - " << job.name);
+        LOG_DEBUG("queueWorker: (" << myId << ") - Starting Job: " << hostname
+                                   << " - " << job.name);
         job(conn);
-        LOG_INFO("Job Completed: " << hostname << " - " << job.name);
+        LOG_INFO("queueWorker: (" << myId << ") - Job Completed: " << hostname
+                                  << " - " << job.name);
       } catch (std::exception &e) {
-        LOG_ERROR("Job threw exception: " << job.name << "': " << e.what());
+#if MIN_LOG_LEVEL <= FATAL
+        LOG_ERROR("queueWorker: (" << myId << ") - Job threw exception: "
+                                   << job.name << "': " << e.what());
+#else
+        LOG_ERROR("queueWorker: - Job threw exception: " << job.name
+                                                         << "': " << e.what());
+#endif
       } catch (...) {
-        LOG_ERROR("Unknown exception caught while running job '" << job.name);
+#if MIN_LOG_LEVEL <= FATAL
+        LOG_ERROR("queueWorker: ("
+                  << myId << ") - Unknown exception caught while running job '"
+                  << job.name);
+#else
+        LOG_ERROR("queueWorker: - Unknown exception caught while running job '"
+                  << job.name);
+#endif
       }
     }
     conn.close();

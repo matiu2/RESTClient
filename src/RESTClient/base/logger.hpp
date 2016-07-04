@@ -12,7 +12,8 @@ namespace RESTClient {
 #define INFO 3
 #define WARN 4
 #define ERROR 5
-#define NONE 6
+#define FATAL 6
+#define NONE 7
 
 #ifndef MIN_LOG_LEVEL
 #define MIN_LOG_LEVEL NONE
