@@ -1,9 +1,8 @@
 #pragma once
 
-
 #include <string>
 #include <iostream>
- 
+
 namespace RESTClient {
 
 // All log levels
@@ -54,43 +53,36 @@ namespace RESTClient {
 
 #if MIN_LOG_LEVEL <= ERROR
 #define LOG_ERROR(ARG)                                                         \
-  LOG("ERROR", ARG)                                                            \
-  std::stringstream __msg;                                                     \
-  __msg << "ERROR: " << ARG;                                                   \
-  throw std::runtime_error(__msg.str());
-#define LOG_ERROR2(ARG)                                                        \
-  LOG("ERROR", ARG)                                                            \
-  __msg << "ERROR: " << ARG;                                                   \
-  throw std::runtime_error(__msg.str());
+  {                                                                            \
+    LOG("ERROR", ARG)                                                          \
+    std::stringstream __msg;                                                   \
+    __msg << "ERROR: " << ARG;                                                 \
+    throw std::runtime_error(__msg.str());                                     \
+  }
 #else
 #define LOG_ERROR(ARG)                                                         \
-  std::stringstream __msg;                                                     \
-  __msg << "ERROR: " << ARG;                                                   \
-  throw std::runtime_error(__msg.str());
-#define LOG_ERROR2(ARG)                                                        \
-  LOG("ERROR", ARG)                                                            \
-  __msg << "ERROR: " << ARG;                                                   \
-  throw std::runtime_error(__msg.str());
+  {                                                                            \
+    std::stringstream __msg;                                                   \
+    __msg << "ERROR: " << ARG;                                                 \
+    throw std::runtime_error(__msg.str());                                     \
+  }
 #endif
 
 #if MIN_LOG_LEVEL <= FATAL
 #define LOG_FATAL(ARG)                                                         \
-  LOG("FATAL", ARG);                                                           \
-  std::stringstream __msg;                                                     \
-  __msg << "FATAL ERROR: " << ARG;                                             \
-  throw std::runtime_error(__msg.str());
-#define LOG_FATAL2(ARG)                                                        \
-  LOG("FATAL", ARG);                                                           \
-  __msg << "FATAL ERROR: " << ARG;                                             \
-  throw std::runtime_error(__msg.str());
+  {                                                                            \
+    LOG("FATAL", ARG);                                                         \
+    std::stringstream __msg;                                                   \
+    __msg << "FATAL ERROR: " << ARG;                                           \
+    throw std::runtime_error(__msg.str());                                     \
+  }
 #else
 #define LOG_FATAL(ARG)                                                         \
-  std::stringstream __msg;                                                     \
-  __msg << "FATAL ERROR: " << ARG;                                             \
-  throw std::runtime_error(__msg.str());
-#define LOG_FATAL2(ARG)                                                        \
-  __msg << "FATAL ERROR: " << ARG;                                             \
-  throw std::runtime_error(__msg.str());
+  {                                                                            \
+    std::stringstream __msg;                                                   \
+    __msg << "FATAL ERROR: " << ARG;                                           \
+    throw std::runtime_error(__msg.str());                                     \
+  }
 #endif
 
 } /* RESTClient */

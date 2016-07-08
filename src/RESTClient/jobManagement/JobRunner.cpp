@@ -23,8 +23,8 @@ void queueWorker(const std::string &hostname, std::queue<QueuedJob> &jobs) {
         LOG_DEBUG("queueWorker: (" << myId << ") - Starting Job: " << hostname
                                    << " - " << job.name);
         job(conn);
-        LOG_INFO("queueWorker: (" << myId << ") - Job Completed: " << hostname
-                                  << " - " << job.name);
+        LOG_DEBUG("queueWorker: (" << myId << ") - Job Completed: " << hostname
+                                   << " - " << job.name);
       } catch (std::exception &e) {
         LOG_ERROR("queueWorker: (" << myId << ") - Job threw exception: "
                                    << job.name << "': " << e.what());
