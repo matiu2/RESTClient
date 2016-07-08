@@ -70,7 +70,7 @@ void readHTTPReply(HTTPResponse &result, asio::yield_context &yield,
   std::istream data(&buf);
   data.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
-  std::tie(ok, result.http_code) = readFirstLine(connection, data);
+  std::tie(ok, result.code) = readFirstLine(connection, data);
   readHeaders(data, result.headers);
 
   // Read important header values
@@ -166,7 +166,7 @@ void readHTTPReply(HTTPResponse &result, asio::yield_context &yield,
     close();
   // If the result was bad
   if (!ok)
-    throw HTTPError(result.http_code, result.body);
+    throw HTTPError(result.code, result.body);
 }
 
 } /* RESTClient */

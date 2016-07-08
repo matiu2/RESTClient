@@ -7,7 +7,7 @@ namespace RESTClient {
 /// Response from an HTTP request
 class HTTPResponse {
 public:
-  int http_code;
+  int code;
   Headers headers;
   HTTPBody body;
 };
