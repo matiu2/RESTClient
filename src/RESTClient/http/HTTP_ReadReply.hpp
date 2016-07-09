@@ -20,8 +20,7 @@ std::tuple<bool, int> readFirstLine(T &connection, std::istream &data) {
   int code;
   data >> temp >> code;
   getline(data, ok);
-  // Consume the '\r' at the end of the line
-  ok.resize(ok.size() - 1);
+  boost::trim(ok);
   return {ok == "OK", code};
 }
 

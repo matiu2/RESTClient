@@ -55,6 +55,10 @@ int main(int argc, char *argv[]) {
 
   RESTClient::Services::instance().io_service.run();
 
-  std::cout << info << std::endl;
+  // Now get the sydney cloud files URL
+  
+  const std::string& token = info["access"]["token"]["id"];
+
+  std::cout << token << std::endl;
   return 0;
 }
