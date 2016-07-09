@@ -35,6 +35,7 @@ if (${BUILD_TESTS} AND ${BUILD_RS_TESTS})
     SET(RS_USERNAME "" CACHE STRING "Rackspace API username, for RS tests")
     SET(RS_APIKEY "" CACHE STRING "Rackspace API apikey")
     SET(RS_REGION "" CACHE STRING "Rackspace datacerter SYD, DFW, ORD, LON, or IAD (at time of writing)")
+    SET(RS_CONTAINER_NAME "" CACHE STRING "Rackspace container name, CONTENTS MAY BE OVERWRITTEN")
 endif()
 
 # extra definitions
@@ -53,6 +54,7 @@ if (${BUILD_RS_TESTS})
   add_definitions(-DRS_USERNAME="${RS_USERNAME}")
   add_definitions(-DRS_APIKEY="${RS_APIKEY}")
   add_definitions(-DRS_REGION="${RS_REGION}")
+  add_definitions(-DRS_CONTAINER_NAME="${RS_CONTAINER_NAME}")
 endif()
 
 # Dependencies

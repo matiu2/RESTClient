@@ -13,9 +13,44 @@
 #include <iostream>
 #include <sstream>
 
-#include <boost/regex.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/coroutine2/all.hpp>
+#include <boost/iostreams/copy.hpp>
+#include <boost/regex.hpp>
 
+// Generates A-Z 0-9 over and over
+class AlphabetoSource {
+public:
+  using char_type = char;
+  using category = boost::iostreams::source_tag;
+private:
+  using coro_t = boost::coroutines2::coroutine<char>;
+  static void _generator(coro_t::push_type &sink) {
+    while (true) {
+      for (char c = 'A'; c != 'Z' + 1; ++c)
+        sink(c);
+      sink(' ');
+      for (char c = '0'; c != '9' + 1; ++c)
+        sink(c);
+      sink(' ');
+    }
+  }
+  coro_t::pull_type generator;
+  std::streamsize limit;
+  std::streamsize transmitted;
+public:
+  AlphabetoSource(size_t limit)
+      : generator(AlphabetoSource::_generator), limit(limit), transmitted(0) {}
+  std::streamsize read(char *s, std::streamsize n) {
+    size_t toSend = std::min(transmitted, n);
+    for (std::streamsize i = 0; i != toSend; ++i) {
+      *s++ = generator.get();
+      generator();
+    }
+    transmitted += toSend;
+    return toSend;
+  }
+};
 
 int main(int argc, char *argv[]) {
 
@@ -30,16 +65,17 @@ int main(int argc, char *argv[]) {
   using json::JMap;
 
   JSON info;
+  RESTClient::Headers headers{{"Content-type", "application/json"}};
 
   jobs.queue("https://identity.api.rackspacecloud.com").emplace(RESTClient::QueuedJob{
       "Login", "https://identity.api.rackspacecloud.com/v2.0/tokens",
-      [&info](const std::string &name, const std::string &hostname,
+      [&info, &headers](const std::string &name, const std::string &hostname,
               RESTClient::HTTP &conn) {
         JSON j(JMap{{"auth", JMap{{"RAX-KSKEY:apiKeyCredentials",
                                    JMap{{"username", RS_USERNAME},
                                         {"apiKey", RS_APIKEY}}}}}});
         RESTClient::HTTPRequest request{
-            "POST", "/v2.0/tokens", {{"Content-type", "application/json"}}};
+            "POST", "/v2.0/tokens", headers};
         std::ostream& putter(request.body);
         putter << j;
         RESTClient::HTTPResponse response = conn.action(request);
@@ -59,24 +95,44 @@ int main(int argc, char *argv[]) {
   const std::string& token = info["access"]["token"]["id"];
   std::cout << "Token: " << token << std::endl;
 
-
-  const std::string* syd_cf = nullptr;
+  std::string syd_cf_url{"https://"};
 
   const json::JList& catalog = info["access"]["serviceCatalog"];
   for (const JMap& service : catalog)
     if (service.at("name") == "cloudFiles") {
       const json::JList& endpoints = service.at("endpoints");
       for (const JMap &point : endpoints)
-        if (point.at("region") == "SYD") {
-          const std::string& tmp = point.at("publicURL");
-          syd_cf = &tmp;
-        }
+        if (point.at("region") == "SYD")
+          syd_cf_url.append(point.at("publicURL"));
     }
 
-  if (syd_cf == nullptr)
-    std::cout << "NO URL" << std::endl;
-  else
-    std::cout << "Syd URL: " << (*syd_cf) << std::endl;
+  std::cout << "Syd URL: " << syd_cf_url << std::endl;
+
+  headers["X-Auth-Token"] = token;
+
+  auto& q = jobs.queue(syd_cf_url);
+
+  q.emplace(RESTClient::QueuedJob{"Ensure container", syd_cf_url,
+             [&token](const std::string &name, const std::string &hostname,
+                      RESTClient::HTTP &server) {
+    // List containers
+    auto response = server.get("/");
+    std::istream& b = response.body;
+    boost::iostreams::copy(b, std::cout);
+    return true;
+  }});
+
+  jobs.startProcessing();
+
+  RESTClient::Services::instance().io_service.run();
+
+/*
+  q.emplace({"Chunked Transmit", syd_cf_url, [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
+    boost::iostream::filtering_stream<char> s;
+    s.push(AlphabetoSource(1024 * 20));
+    HTTP::Request r("POST"), 
+  });
+  */
 
   return 0;
 }
