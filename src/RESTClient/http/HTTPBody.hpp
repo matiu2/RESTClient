@@ -53,6 +53,7 @@ struct HTTPStringStreamBody : public HTTPStreamBody {
 struct HTTPBody {
   HTTPBody() { body.reset(new HTTPStringStreamBody()); }
   HTTPBody(std::string data) { *this = std::move(data); }
+  HTTPBody(std::stringstream&& data) { *this = std::move(data); }
   std::unique_ptr<HTTPBaseBody> body;
   /// Called when downloading. It'll consume from the buffer and append into our
   /// body

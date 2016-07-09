@@ -38,10 +38,11 @@ int main(int argc, char *argv[]) {
         JSON j(JMap{{"auth", JMap{{"RAX-KSKEY:apiKeyCredentials",
                                    JMap{{"username", RS_USERNAME},
                                         {"apiKey", RS_APIKEY}}}}}});
-        std::stringstream request;
-        request << j;
-        RESTClient::HTTPResponse response =
-            conn.post("/v2.0/tokens", request.str());
+        RESTClient::HTTPRequest request{
+            "POST", "/v2.0/tokens", {{"Content-type", "application/json"}}};
+        std::ostream& putter(request.body);
+        putter << j;
+        RESTClient::HTTPResponse response = conn.action(request);
         if (!((response.code >= 200) && (response.code < 300)))
           LOG_ERROR("Couldn't log in to RS: code("
                     << response.code << ") message (" << response.body << ")");
