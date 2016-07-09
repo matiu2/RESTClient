@@ -56,9 +56,27 @@ int main(int argc, char *argv[]) {
   RESTClient::Services::instance().io_service.run();
 
   // Now get the sydney cloud files URL
-  
   const std::string& token = info["access"]["token"]["id"];
+  std::cout << "Token: " << token << std::endl;
 
-  std::cout << token << std::endl;
+
+  const std::string* syd_cf = nullptr;
+
+  const json::JList& catalog = info["access"]["serviceCatalog"];
+  for (const JMap& service : catalog)
+    if (service.at("name") == "cloudFiles") {
+      const json::JList& endpoints = service.at("endpoints");
+      for (const JMap &point : endpoints)
+        if (point.at("region") == "SYD") {
+          const std::string& tmp = point.at("publicURL");
+          syd_cf = &tmp;
+        }
+    }
+
+  if (syd_cf == nullptr)
+    std::cout << "NO URL" << std::endl;
+  else
+    std::cout << "Syd URL: " << (*syd_cf) << std::endl;
+
   return 0;
 }
