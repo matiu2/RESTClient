@@ -22,7 +22,7 @@ public:
   std::streamsize write(const char *s, std::streamsize n) {
     LOG_TRACE("OutputToNet writing: " << n);
     return asio::async_write(connection, asio::buffer(s, n),
-                             asio::transfer_at_least(n), yield);
+                             asio::transfer_exactly(n), yield);
   }
 };
 

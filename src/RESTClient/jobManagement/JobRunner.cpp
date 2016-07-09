@@ -26,12 +26,12 @@ void queueWorker(const std::string &hostname, std::queue<QueuedJob> &jobs) {
         LOG_DEBUG("queueWorker: (" << myId << ") - Job Completed: " << hostname
                                    << " - " << job.name);
       } catch (std::exception &e) {
-        LOG_ERROR("queueWorker: (" << myId << ") - Job threw exception: "
-                                   << job.name << "': " << e.what());
+        LOG_WARN("queueWorker: (" << myId << ") - Job threw exception: "
+                                  << job.name << "': " << e.what());
       } catch (...) {
-        LOG_ERROR("queueWorker: ("
-                  << myId << ") - Unknown exception caught while running job '"
-                  << job.name);
+        LOG_WARN("queueWorker: ("
+                 << myId << ") - Unknown exception caught while running job '"
+                 << job.name);
       }
     }
     conn.close();
@@ -49,7 +49,8 @@ void JobRunner::startProcessing(size_t connectionsPerHost) {
   for (auto &both : queues) {
     LOG_TRACE("Processing queue. Hostname: " << both.first << " - queue size: "
                                              << both.second.size())
-    for (size_t i = 0; i < connectionsPerHost; ++i) {
+    for (size_t i = 0; i < std::min(connectionsPerHost, both.second.size());
+         ++i) {
       queueWorker(both.first, both.second);
     }
   }

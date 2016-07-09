@@ -4,6 +4,7 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/algorithm/string/find.hpp>
 
+#include <RESTClient/base/logger.hpp>
 #include "HTTP_readChunk.hpp"
 #include "HTTP_CopyToCout.hpp"
 
@@ -17,10 +18,10 @@ std::tuple<bool, int> readFirstLine(T &connection, std::istream &data) {
   std::string temp, ok;
   // Read in the first line
   int code;
-  data >> temp >> code >> ok;
-  // Consume the '\r\n' at the end of the line
-  data.get(); 
-  data.get(); 
+  data >> temp >> code;
+  getline(data, ok);
+  // Consume the '\r' at the end of the line
+  ok.resize(ok.size() - 1);
   return {ok == "OK", code};
 }
 

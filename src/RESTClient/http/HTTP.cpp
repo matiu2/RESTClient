@@ -83,9 +83,9 @@ void chunkedTransmit(filtering_ostream &transmitter, std::istream &data) {
   }
 }
 
-/// Transmits a body. If the body size is positive (not -1), it'll send it in
-/// one go. A negative number indicates that we don't know the size, so it
-/// should be sent in chunked transfer-encoding
+/// Transmits a body. If the request.size (body size) is positive (not -1),
+/// it'll send it in one go. A negative number indicates that we don't know the
+/// size, so it should be sent in chunked transfer-encoding
 void transmitBody(filtering_ostream &transmitter, HTTPRequest &request,
                   asio::yield_context &yield) {
   // If we know the body size
@@ -218,23 +218,8 @@ HTTPResponse HTTP::PUT_OR_POST(std::string verb, std::string path,
                                std::string data) {
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   // TODO: use 'action' instead
-  output << verb << " " << path << " HTTP/1.1"
-         << "\r\n";
-  output << "Host: " << hostname << "\r\n";
-  output << "Accept: */*"
-         << "\r\n";
-  output << "Accept-Encoding: gzip, deflate"
-         << "\r\n";
-  output << "TE: trailers"
-         << "\r\n";
-  if (data.size() > 0)
-    output << "Content-Length: " << data.size() << "\r\n";
-  output << "\r\n";
-  HTTPResponse result;
-  ensureConnection();
-  output << data;
-  readHTTPReply(result);
-  return result;
+  HTTPRequest request(verb, path, {}, data);
+  return action(request);
 }
 
 HTTPResponse HTTP::put(const std::string path, std::string data) {
