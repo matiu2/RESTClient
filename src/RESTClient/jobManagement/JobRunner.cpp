@@ -26,8 +26,10 @@ void queueWorker(const std::string &hostname, std::queue<QueuedJob> &jobs) {
         LOG_DEBUG("queueWorker: (" << myId << ") - Job Completed: " << hostname
                                    << " - " << job.name);
       } catch (std::exception &e) {
-        LOG_WARN("queueWorker: (" << myId << ") - Job threw exception: "
-                                  << job.name << "': " << e.what());
+        LOG_WARN("queueWorker: (" << myId << ") - Job (" << job.name
+                                  << ") - Hostname (" << hostname
+                                  << ") threw exception: "
+                                  << "': " << e.what());
       } catch (...) {
         LOG_WARN("queueWorker: ("
                  << myId << ") - Unknown exception caught while running job '"
