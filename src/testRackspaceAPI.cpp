@@ -67,9 +67,68 @@ int main(int argc, char *argv[]) {
   JSON info;
   RESTClient::Headers headers{{"Content-type", "application/json"}};
 
+  auto afterLogin = [&]() {
+    // Now get the sydney cloud files URL
+    const std::string &token = info["access"]["token"]["id"];
+    std::cout << "Token: " << token << std::endl;
+
+    std::string syd_cf_url;
+
+    const json::JList &catalog = info["access"]["serviceCatalog"];
+    for (const JMap &service : catalog)
+      if (service.at("name") == "cloudFiles") {
+        const json::JList &endpoints = service.at("endpoints");
+        for (const JMap &point : endpoints)
+          if (point.at("region") == "SYD")
+            syd_cf_url = point.at("publicURL");
+      }
+
+    std::cout << "Syd URL: " << syd_cf_url << std::endl;
+    headers["X-Auth-Token"] = token;
+    
+    // Extract the hostname from the URL
+    boost::iterator_range<char> divider = boost::find(syd_cf_url, "://");
+    std::string::iterator hostStart = divider.end();
+    const std::string protocolTerminator = "/?";
+    const std::string hostnameTerminators = "/?";
+    const std::string pathTerminators = "/?";
+    std::string::iterator pathStart = std::find_first_of(
+        hostStart, syd_cf_url.end(), hostnameTerminators.begin(),
+        hostnameTerminators.end());
+    std::string hostname, path;
+    std::copy(hostStart, pathStart, std::back_inserter(hostname));
+    std::copy(pathStart, 
+
+    boost::iterator_range<char> pathStart(boost::find(divider.end(), boost::find(
+    auto part = boost::make_split_iterator(syd_cf_url, "://");
+    ++part;
+    boost::itertor_range minusProto = *part;
+    part = boost::make_split_iterator(minusProto, '/');
+    std::string hostname = 
+    boost::iterator_range afterProto = syd_cf_url
+
+
+    auto &q = jobs.queue(syd_cf_url);
+
+    q.emplace(RESTClient::QueuedJob{"Ensure container", syd_cf_url,
+                                    [&token](const std::string &name,
+                                             const std::string &hostname,
+                                             RESTClient::HTTP &server) {
+      // List containers
+      auto response = server.get("/");
+      std::istream &b = response.body;
+      boost::iostreams::copy(b, std::cout);
+      return true;
+    }});
+
+    jobs.startProcessing();
+
+  };
+
+
   jobs.queue("https://identity.api.rackspacecloud.com").emplace(RESTClient::QueuedJob{
       "Login", "https://identity.api.rackspacecloud.com/v2.0/tokens",
-      [&info, &headers](const std::string &name, const std::string &hostname,
+      [&info, &headers, &afterLogin](const std::string &name, const std::string &hostname,
               RESTClient::HTTP &conn) {
         JSON j(JMap{{"auth", JMap{{"RAX-KSKEY:apiKeyCredentials",
                                    JMap{{"username", RS_USERNAME},
@@ -84,6 +143,7 @@ int main(int argc, char *argv[]) {
                     << response.code << ") message (" << response.body << ")");
         std::string data(response.body);
         info = json::readValue(data.begin(), data.end());
+        afterLogin();
         return true;
       }});
 
@@ -91,36 +151,6 @@ int main(int argc, char *argv[]) {
 
   RESTClient::Services::instance().io_service.run();
 
-  // Now get the sydney cloud files URL
-  const std::string& token = info["access"]["token"]["id"];
-  std::cout << "Token: " << token << std::endl;
-
-  std::string syd_cf_url{"https://"};
-
-  const json::JList& catalog = info["access"]["serviceCatalog"];
-  for (const JMap& service : catalog)
-    if (service.at("name") == "cloudFiles") {
-      const json::JList& endpoints = service.at("endpoints");
-      for (const JMap &point : endpoints)
-        if (point.at("region") == "SYD")
-          syd_cf_url.append(point.at("publicURL"));
-    }
-
-  std::cout << "Syd URL: " << syd_cf_url << std::endl;
-
-  headers["X-Auth-Token"] = token;
-
-  auto& q = jobs.queue(syd_cf_url);
-
-  q.emplace(RESTClient::QueuedJob{"Ensure container", syd_cf_url,
-             [&token](const std::string &name, const std::string &hostname,
-                      RESTClient::HTTP &server) {
-    // List containers
-    auto response = server.get("/");
-    std::istream& b = response.body;
-    boost::iostreams::copy(b, std::cout);
-    return true;
-  }});
 
   jobs.startProcessing();
 
