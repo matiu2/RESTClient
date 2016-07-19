@@ -28,7 +28,9 @@ using boost::fusion::operator<<;
 }
 
 BOOST_FUSION_ADAPT_STRUCT(RESTClient::ast::URLParts,
-                          (std::string, protocol)(std::string, hostname));
+                          (std::string, protocol)
+                          (std::string, hostname)
+                          (std::string, path));
 
 namespace RESTClient {
 
@@ -40,6 +42,7 @@ using x3::lit;
 using x3::alnum;
 using x3::hex;
 using x3::string;
+using x3::attr;
 
 x3::rule<class url, ast::URLParts> const url = "url";
 
@@ -47,7 +50,9 @@ auto const protocol = string("https") | string("http");
 auto const normal_char = ~char_("?/%");
 auto const quoted_char = (lit('%') >> hex >> hex);
 auto const hostname = +(normal_char | quoted_char);
-auto const url_def = protocol >> lit("://") >> hostname; //  >> -(path) >> -(query);
+auto const path = char_('/') >> +(~char_('?'));
+auto const url_def =
+    protocol >> lit("://") >> hostname >> (path | attr("")); //  >> -(query);
 
 BOOST_SPIRIT_DEFINE(url);
 
