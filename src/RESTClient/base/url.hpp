@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ostream>
+
 #include <boost/spirit/home/x3.hpp>
 #include <boost/range.hpp>
 #include <boost/fusion/include/adapt_struct.hpp>
@@ -41,7 +43,7 @@ using x3::string;
 
 x3::rule<class url, ast::URLParts> const url = "url";
 
-auto const protocol = string("http") | string("https");
+auto const protocol = string("https") | string("http");
 auto const normal_char = ~char_("?/%");
 auto const quoted_char = (lit('%') >> hex >> hex);
 auto const hostname = +(normal_char | quoted_char);
@@ -64,9 +66,13 @@ public:
   URL(std::string&& url) : _url(std::move(url)) {
     parse();
   }
-  const ast::URLParts& parts() { return _parts; };
-
+  const ast::URLParts &parts() const { return _parts; };
+  const std::string &str() const { return _url; }
 };
 
+std::ostream &operator<<(std::ostream &o, const URL &url) {
+  o << url.str();
+  return o;
+}
 
 } /* RESTClient */
