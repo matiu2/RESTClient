@@ -36,13 +36,16 @@ namespace ascii = boost::spirit::x3::ascii;
 using x3::char_;
 using x3::lit;
 using x3::alnum;
+using x3::hex;
 using x3::string;
 
 x3::rule<class url, ast::URLParts> const url = "url";
 
 auto const protocol = string("http") | string("https");
-auto const hostname = +(alnum) % char_(".");
-auto const url_def = protocol >> lit("://") >> hostname;
+auto const normal_char = ~char_("?/%");
+auto const quoted_char = (lit('%') >> hex >> hex);
+auto const hostname = +(normal_char | quoted_char);
+auto const url_def = protocol >> lit("://") >> hostname; //  >> -(path) >> -(query);
 
 BOOST_SPIRIT_DEFINE(url);
 
