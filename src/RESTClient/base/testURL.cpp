@@ -13,7 +13,7 @@ int main(int , char**)
   using namespace std;
   cout << "Protocol: " << test1.parts().protocol << endl
        << "Hostname: " << test1.parts().hostname << endl;
-  //assert(test1.protocol == "http");
-  //assert(test1.hostname == "somewhere.com");
+  assert(test1.parts().protocol == "http");
+  assert(test1.parts().hostname == "somewhere.com");
   return 0;
 }
