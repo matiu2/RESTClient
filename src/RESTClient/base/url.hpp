@@ -2,9 +2,11 @@
 
 #include <ostream>
 
-#include <boost/spirit/home/x3.hpp>
-#include <boost/range.hpp>
 #include <boost/fusion/include/adapt_struct.hpp>
+#include <boost/fusion/include/io.hpp>
+#include <boost/fusion/include/std_pair.hpp>
+#include <boost/range.hpp>
+#include <boost/spirit/home/x3.hpp>
 
 namespace RESTClient {
 
@@ -32,7 +34,7 @@ using boost::fusion::operator<<;
 
 BOOST_FUSION_ADAPT_STRUCT(RESTClient::ast::URLParts, (std::string, protocol),
                           (std::string, hostname), (std::string, path),
-                          //(RESTClient::ast::QueryParameters, queryParameters)
+                          (RESTClient::ast::QueryParameters, queryParameters)
                           );
 
 namespace RESTClient {
@@ -60,8 +62,8 @@ auto const query_word = +(~char_("?&="));
 auto const query_pair = query_word >> lit('=') >> query_word;
 auto const query_def =
     lit('?') >> *(query_pair) % lit('&');
-auto const url_def = protocol >> lit("://") >> hostname >> (path | attr(""));
-                     //(query_def | attr(std::map<std::string, std::string>()));
+auto const url_def = protocol >> lit("://") >> hostname >> (path | attr("")) >>
+                     (query_def | attr(std::map<std::string, std::string>()));
 
 BOOST_SPIRIT_DEFINE(query, url);
 

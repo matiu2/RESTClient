@@ -3,7 +3,6 @@
 
 #include <boost/config/warning_disable.hpp>
 #include <boost/spirit/home/x3.hpp>
-#include <boost/spirit/home/x3/support/ast/variant.hpp>
 #include <boost/fusion/include/adapt_struct.hpp>
 #include <boost/fusion/include/std_pair.hpp>
 #include <boost/fusion/include/io.hpp>
@@ -29,11 +28,6 @@ using namespace RESTClient;
   using x3::string;
   using x3::attr;
 
-  using Pair = std::pair<std::string, std::string>;
-  x3::rule<class pair_rule, Pair> const pair_rule = "pair";
-  const auto pair_rule_def = +(~char_("=")) >> lit("=") >> +(~char_("="));
-  BOOST_SPIRIT_DEFINE(pair_rule);
-
 int main(int , char**)
 {
   URL test1("http://somewhere.com");
@@ -52,14 +46,12 @@ int main(int , char**)
   EQ(test2.parts().path, "/some/path/");
   LOG_INFO("Test 2 - PASSED");
 
-  std::string pair("a=1");
-  Pair params;
-  x3::phrase_parse(pair.begin(), pair.end(), pair_rule_def, x3::space, params);
-  LOG_INFO("Out: " << params.first << " - " << params.second);
-
-  //std::string query("?a=1&b=2");
-  //ast::QueryParameters params;
-  //x3::phrase_parse(query.begin(), query.end(), query_def, x3::space, params);
+  std::string query("?a=1&b=2");
+  ast::QueryParameters params;
+  x3::phrase_parse(query.begin(), query.end(), query_def, x3::space, params);
+  EQ(params.size(), 2);
+  EQ(params.at("a"), "1");
+  EQ(params.at("b"), "2");
 
 
   return 0;
