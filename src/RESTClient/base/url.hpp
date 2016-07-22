@@ -44,7 +44,9 @@ namespace ascii = boost::spirit::x3::ascii;
 
 using x3::char_;
 using x3::lit;
+using x3::alpha;
 using x3::alnum;
+using x3::digit;
 using x3::hex;
 using x3::string;
 using x3::attr;
@@ -52,17 +54,48 @@ using x3::attr;
 x3::rule<class url, ast::URLParts> const url = "url";
 x3::rule<class query, ast::QueryParameters> const query = "query";
 
-auto const protocol = string("https") | string("http");
+// from RFC1738
+// characters
+
+auto const safe = char_("$-_.+");
+auto const extra = char_("!*'(),");
+auto const national = char_("{}|\\^~[]`");
+auto const punctuation = char_("<>#%\"");
+auto const reserved = char_(";/?:@&=");
+auto const escape = "%" > hex > hex;
+
+auto const unreserved = alnum | safe | extra;
+auto const uchar = unreserved | escape;
+auto const xchar = unreserved | reserved | escape;
+auto digits = +digit;
+
+// hostname part
+auto const domainlabel = alnum | alnum >> *(alnum | char_('-')) >> alnum;
+auto const toplabel = alpha | alpha >> *(alnum | char_('-')) >> alnum;
+auto const user = *(uchar | char_(";?&="));
+auto const password = *(uchar | char_(";?&="));
+auto const urlpath = *xchar;
+auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
+                        digits >> char_('.') >> digits;
+auto const hostname = *(domainlabel >> '.') >> toplabel;
+auto const host = hostname | hostnumber;
+auto const port = digits;
+auto const hostport = host >> -(':' >> port);
+auto const login = -(user >> -(':' >> password)) >> hostport;
+
+    // Older bits
+    auto const protocol = string("https") | string("http");
 auto const normal_char = ~char_("?/%");
 auto const quoted_char = (lit('%') >> hex >> hex);
-auto const hostname = +(normal_char | quoted_char);
+auto const hostname_old = +(normal_char | quoted_char);
 auto const path = char_('/') >> +(~char_('?'));
 // Query part
 auto const query_word = +(~char_("?&="));
 auto const query_pair = query_word >> lit('=') >> query_word;
 auto const query_def =
     lit('?') >> *(query_pair) % lit('&');
-auto const url_def = protocol >> lit("://") >> hostname >> (path | attr("")) >>
+auto const url_def = protocol >> lit("://") >> hostname_old >>
+                     (path | attr("")) >>
                      (query_def | attr(std::map<std::string, std::string>()));
 
 BOOST_SPIRIT_DEFINE(query, url);

@@ -21,13 +21,6 @@ using namespace RESTClient;
   }
 
 
-  using x3::char_;
-  using x3::lit;
-  using x3::alnum;
-  using x3::hex;
-  using x3::string;
-  using x3::attr;
-
 int main(int , char**)
 {
   URL test1("http://somewhere.com");
