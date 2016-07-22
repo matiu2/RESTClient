@@ -49,6 +49,7 @@ using x3::alnum;
 using x3::digit;
 using x3::hex;
 using x3::string;
+using x3::ushort_;
 using x3::attr;
 
 x3::rule<class url, ast::URLParts> const url = "url";
@@ -70,7 +71,9 @@ auto const xchar = unreserved | reserved | escape;
 auto digits = +digit;
 
 // hostname part
-auto const domainlabel = alnum | alnum >> *(alnum | char_('-')) >> alnum;
+//auto const domainlabel = alnum | alnum >> *(alnum | char_('-')) >> alnum;
+// NOTE: This should disallow '-' at the beginning and end of the string
+auto const domainlabel = +(alnum | char_('-'));
 auto const toplabel = alpha | alpha >> *(alnum | char_('-')) >> alnum;
 auto const user = *(uchar | char_(";?&="));
 auto const password = *(uchar | char_(";?&="));
@@ -79,7 +82,7 @@ auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
                         digits >> char_('.') >> digits;
 auto const hostname = *(domainlabel >> '.') >> toplabel;
 auto const host = hostname | hostnumber;
-auto const port = digits;
+auto const port = ushort_;
 auto const hostport = host >> -(':' >> port);
 auto const login = -(user >> -(':' >> password)) >> hostport;
 

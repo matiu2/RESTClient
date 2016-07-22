@@ -20,6 +20,30 @@ using namespace RESTClient;
               << __FILE__ << " - Function: " << __FUNCTION__ << std::endl);    \
   }
 
+void testDomainLabel(const std::string& label) {
+  LOG_INFO("Testing domainlabel with " << label);
+  std::string out;
+  auto begin = label.cbegin();
+  auto end = label.cend();
+  bool worked = x3::phrase_parse(begin, end, domainlabel, x3::space, out);
+  std::string matched;
+  std::copy(label.cbegin(), begin, std::back_inserter(matched));
+  LOG_DEBUG("Matched: " << matched);
+  assert(worked);
+  assert(begin == end);
+  EQ(out, label);
+  // Test a bad label
+  std::string bad = label + ".com";
+  LOG_INFO("Testing domainlabel with " << bad);
+  out.clear();
+  begin = bad.cbegin();
+  end = bad.cend();
+  worked = x3::phrase_parse(begin, end, domainlabel, x3::space, out);
+  assert(worked);
+  assert(begin != end);
+  EQ(out, label);
+}
+
 
 int main(int , char**)
 {
@@ -39,12 +63,18 @@ int main(int , char**)
   EQ(test2.parts().path, "/some/path/");
   LOG_INFO("Test 2 - PASSED");
 
+  testDomainLabel("somewhere");
+  testDomainLabel("s");
+  testDomainLabel("s-w");
+
+  /*
   std::string query("?a=1&b=2");
   ast::QueryParameters params;
-  x3::phrase_parse(query.begin(), query.end(), query_def, x3::space, params);
+  x3::phrase_parse(query.begin(), query.end(), query_def, x3::eps, params);
   EQ(params.size(), 2);
   EQ(params.at("a"), "1");
   EQ(params.at("b"), "2");
+  */
 
 
   return 0;
