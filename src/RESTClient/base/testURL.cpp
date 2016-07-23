@@ -49,10 +49,21 @@ void testTopLabel(const std::string& label) {
   auto begin = label.cbegin();
   auto end = label.cend();
   std::string out;
-  bool worked = x3::phrase_parse(begin, end, toplabel, x3::space, out);
+  bool worked = x3::phrase_parse(begin, end, x3::lexeme[toplabel], x3::space, out);
   assert(worked);
   assert(begin == end);
 }
+
+void testHostName(const std::string& label) {
+  LOG_INFO("Test Hostname: " << label);
+  auto begin = label.cbegin();
+  auto end = label.cend();
+  std::string out;
+  bool worked = x3::phrase_parse(begin, end, x3::lexeme[hostname], x3::space, out);
+  assert(worked);
+  assert(begin == end);
+}
+
 
 int main(int , char**)
 {
@@ -78,7 +89,7 @@ int main(int , char**)
 
   testTopLabel("com");
 
-
+  testHostName("some.host.com");
   /*
   std::string query("?a=1&b=2");
   ast::QueryParameters params;
