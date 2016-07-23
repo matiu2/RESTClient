@@ -38,12 +38,21 @@ void testDomainLabel(const std::string& label) {
   out.clear();
   begin = bad.cbegin();
   end = bad.cend();
-  worked = x3::phrase_parse(begin, end, domainlabel, x3::space, out);
+  worked = x3::phrase_parse(begin, end, x3::lexeme[domainlabel], x3::space, out);
   assert(worked);
   assert(begin != end);
   EQ(out, label);
 }
 
+void testTopLabel(const std::string& label) {
+  LOG_INFO("Test top label: " << label);
+  auto begin = label.cbegin();
+  auto end = label.cend();
+  std::string out;
+  bool worked = x3::phrase_parse(begin, end, toplabel, x3::space, out);
+  assert(worked);
+  assert(begin == end);
+}
 
 int main(int , char**)
 {
@@ -66,6 +75,9 @@ int main(int , char**)
   testDomainLabel("somewhere");
   testDomainLabel("s");
   testDomainLabel("s-w");
+
+  testTopLabel("com");
+
 
   /*
   std::string query("?a=1&b=2");

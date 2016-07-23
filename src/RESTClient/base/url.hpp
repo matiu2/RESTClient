@@ -74,7 +74,9 @@ auto digits = +digit;
 //auto const domainlabel = alnum | alnum >> *(alnum | char_('-')) >> alnum;
 // NOTE: This should disallow '-' at the beginning and end of the string
 auto const domainlabel = +(alnum | char_('-'));
-auto const toplabel = alpha | alpha >> *(alnum | char_('-')) >> alnum;
+//auto const toplabel = alpha | alpha >> *(alnum | char_('-')) >> alnum;
+// NOTE: Top label should dissallow num in the first char
+auto const toplabel = +(alnum | char_('-'));
 auto const user = *(uchar | char_(";?&="));
 auto const password = *(uchar | char_(";?&="));
 auto const urlpath = *xchar;
