@@ -20,25 +20,27 @@ using namespace RESTClient;
               << __FILE__ << " - Function: " << __FUNCTION__ << std::endl);    \
   }
 
-void testDomainLabel(const std::string& label) {
-  LOG_INFO("Testing domainlabel with " << label);
-  std::string out;
+template <typename T>
+void test(const std::string& label, const T& parser) {
   auto begin = label.cbegin();
   auto end = label.cend();
-  bool worked = x3::phrase_parse(begin, end, domainlabel, x3::space, out);
-  std::string matched;
-  std::copy(label.cbegin(), begin, std::back_inserter(matched));
-  LOG_DEBUG("Matched: " << matched);
+  std::string out;
+  bool worked = x3::phrase_parse(begin, end, x3::lexeme[parser], x3::space, out);
   assert(worked);
   assert(begin == end);
   EQ(out, label);
+}
+
+void testDomainLabel(const std::string& label) {
+  LOG_INFO("Testing domainlabel with " << label);
+  test(label, domainlabel);
   // Test a bad label
   std::string bad = label + ".com";
   LOG_INFO("Testing domainlabel with " << bad);
-  out.clear();
-  begin = bad.cbegin();
-  end = bad.cend();
-  worked = x3::phrase_parse(begin, end, x3::lexeme[domainlabel], x3::space, out);
+  std::string out;
+  auto begin = bad.cbegin();
+  auto end = bad.cend();
+  bool worked = x3::phrase_parse(begin, end, x3::lexeme[domainlabel], x3::space, out);
   assert(worked);
   assert(begin != end);
   EQ(out, label);
@@ -46,22 +48,12 @@ void testDomainLabel(const std::string& label) {
 
 void testTopLabel(const std::string& label) {
   LOG_INFO("Test top label: " << label);
-  auto begin = label.cbegin();
-  auto end = label.cend();
-  std::string out;
-  bool worked = x3::phrase_parse(begin, end, x3::lexeme[toplabel], x3::space, out);
-  assert(worked);
-  assert(begin == end);
+  test(label, toplabel);
 }
 
 void testHostName(const std::string& label) {
   LOG_INFO("Test Hostname: " << label);
-  auto begin = label.cbegin();
-  auto end = label.cend();
-  std::string out;
-  bool worked = x3::phrase_parse(begin, end, x3::lexeme[hostname], x3::space, out);
-  assert(worked);
-  assert(begin == end);
+  test(label, hostname);
 }
 
 

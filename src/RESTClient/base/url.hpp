@@ -82,7 +82,7 @@ auto const password = *(uchar | char_(";?&="));
 auto const urlpath = *xchar;
 auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
                         digits >> char_('.') >> digits;
-auto const hostname = *(domainlabel >> '.') >> toplabel;
+auto const hostname = *(domainlabel >> char_('.')) >> toplabel;
 auto const host = hostname | hostnumber;
 auto const port = ushort_;
 auto const hostport = host >> -(':' >> port);
