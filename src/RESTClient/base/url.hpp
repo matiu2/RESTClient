@@ -98,11 +98,14 @@ auto const normal_char = ~char_("?/%");
 auto const quoted_char = (lit('%') >> hex >> hex);
 auto const path = char_('/') >> +(~char_('?'));
 // Query part
-auto const query_word = +(~char_("?&="));
-auto const query_pair = query_word >> lit('=') >> query_word;
+auto const query_word = x3::rule<class query_word, std::string>() =
+    +(~char_("?&="));
+auto const query_pair =
+    x3::rule<class query_pair, std::pair<std::string, std::string>>() =
+        query_word >> '=' >> query_word;
 auto const query_def =
-    lit('?') >> *(query_pair) % lit('&');
-auto const url_def = protocol >> lit("://") >> hostname >> (path | attr(""));
+    lit('?') >> *(query_pair) % '&';
+auto const url_def = protocol >> "://" >> hostname >> (path | attr(""));
                      //(query_def | attr(std::map<std::string, std::string>()));
 
 BOOST_SPIRIT_DEFINE(query, url);

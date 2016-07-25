@@ -21,18 +21,19 @@ using namespace RESTClient;
   }
 
 template <typename T>
-void test(const std::string& label, const T& parser) {
+void test(const std::string &label, const T &parser) {
   auto begin = label.cbegin();
   auto end = label.cend();
   std::string out;
-  bool worked = x3::phrase_parse(begin, end, x3::lexeme[parser], x3::space, out);
+  bool worked =
+      x3::phrase_parse(begin, end, x3::lexeme[parser], x3::space, out);
   assert(worked);
   if (begin != end) {
-    std::string out;
-    std::copy(label.cbegin(), begin, std::back_inserter(out));
+    std::string compare_to;
+    std::copy(label.cbegin(), begin, std::back_inserter(compare_to));
     std::stringstream msg;
     msg << "Failed to do a full parse: " << std::endl << "Label: " << label
-        << std::endl << "copyd: " << out << std::endl;
+        << std::endl << "copyd: " << compare_to << std::endl;
     throw runtime_error(msg.str());
   }
   EQ(out, label);
@@ -47,7 +48,8 @@ void testDomainLabel(const std::string& label) {
   std::string out;
   auto begin = bad.cbegin();
   auto end = bad.cend();
-  bool worked = x3::phrase_parse(begin, end, x3::lexeme[domainlabel], x3::space, out);
+  bool worked =
+      x3::phrase_parse(begin, end, x3::lexeme[domainlabel], x3::space, out);
   assert(worked);
   assert(begin != end);
 }
@@ -61,6 +63,33 @@ void testHostName(const std::string& label) {
   LOG_INFO("Test Hostname: " << label);
   test(label, hostname);
 }
+
+void testQueryWord(const std::string& label) {
+  LOG_INFO("Test Query word: " << label);
+  test(label, query_word);
+}
+
+void testQueryPair(const std::string& label) {
+  LOG_INFO("Test Query pair: " << label);
+  std::pair<std::string, std::string> query_pair_out;
+  x3::phrase_parse(label.begin(), label.end(), query_pair, x3::space, query_pair_out);
+  std::pair<std::string, std::string> out;
+  auto begin = label.cbegin();
+  auto end = label.cend();
+  bool worked =
+      x3::phrase_parse(begin, end, x3::lexeme[query_pair], x3::space, out);
+  assert(worked);
+  if (begin != end) {
+    std::string compare_to;
+    std::copy(label.cbegin(), begin, std::back_inserter(compare_to));
+    std::stringstream msg;
+    msg << "Failed to do a full parse: " << std::endl << "Label: " << label
+        << std::endl << "copyd: " << compare_to << std::endl;
+    throw runtime_error(msg.str());
+  }
+}
+
+
 
 /*
 void testHostPort(const std::string &label, unsigned short portToTest = 8000) {
@@ -106,14 +135,15 @@ int main(int , char**)
   // testHostPort("somwhere:8080", 8080);
   // testHostPort("somwhere.com:8000", 8000);
 
-  /*
+  testQueryWord("abc");
+  testQueryPair("abc=123");
+
   std::string query("?a=1&b=2");
   ast::QueryParameters params;
-  x3::phrase_parse(query.begin(), query.end(), query_def, x3::eps, params);
+  x3::phrase_parse(query.begin(), query.end(), query_def, x3::space, params);
   EQ(params.size(), 2);
   EQ(params.at("a"), "1");
   EQ(params.at("b"), "2");
-  */
 
 
   return 0;
