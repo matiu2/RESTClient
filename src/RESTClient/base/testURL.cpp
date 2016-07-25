@@ -27,7 +27,14 @@ void test(const std::string& label, const T& parser) {
   std::string out;
   bool worked = x3::phrase_parse(begin, end, x3::lexeme[parser], x3::space, out);
   assert(worked);
-  assert(begin == end);
+  if (begin != end) {
+    std::string out;
+    std::copy(label.cbegin(), begin, std::back_inserter(out));
+    std::stringstream msg;
+    msg << "Failed to do a full parse: " << std::endl << "Label: " << label
+        << std::endl << "copyd: " << out << std::endl;
+    throw runtime_error(msg.str());
+  }
   EQ(out, label);
 }
 
@@ -43,7 +50,6 @@ void testDomainLabel(const std::string& label) {
   bool worked = x3::phrase_parse(begin, end, x3::lexeme[domainlabel], x3::space, out);
   assert(worked);
   assert(begin != end);
-  EQ(out, label);
 }
 
 void testTopLabel(const std::string& label) {
@@ -56,6 +62,19 @@ void testHostName(const std::string& label) {
   test(label, hostname);
 }
 
+/*
+void testHostPort(const std::string &label, unsigned short portToTest = 8000) {
+  LOG_INFO("Test hostport: " << label);
+  auto begin = label.cbegin();
+  auto end = label.cend();
+  std::pair<std::string, x3::optional<unsigned short>> out;
+  bool worked =
+      x3::phrase_parse(begin, end, x3::lexeme[hostport], x3::space, out);
+  assert(worked);
+  assert(begin == end);
+  EQ(out.first, label);
+  EQ(out.second, portToTest);
+}  */
 
 int main(int , char**)
 {
@@ -82,6 +101,11 @@ int main(int , char**)
   testTopLabel("com");
 
   testHostName("some.host.com");
+
+  //testHostPort("other-host.com", 80);
+  // testHostPort("somwhere:8080", 8080);
+  // testHostPort("somwhere.com:8000", 8000);
+
   /*
   std::string query("?a=1&b=2");
   ast::QueryParameters params;

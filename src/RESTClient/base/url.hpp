@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ostream>
+#include <map>
 
 #include <boost/fusion/include/adapt_struct.hpp>
 #include <boost/fusion/include/io.hpp>
@@ -33,8 +34,8 @@ using boost::fusion::operator<<;
 }
 
 BOOST_FUSION_ADAPT_STRUCT(RESTClient::ast::URLParts, (std::string, protocol),
-                          (std::string, hostname), (std::string, path),
-                          (RESTClient::ast::QueryParameters, queryParameters)
+                          (std::string, hostname), (std::string, path)
+                          //(RESTClient::ast::QueryParameters, queryParameters)
                           );
 
 namespace RESTClient {
@@ -51,6 +52,9 @@ using x3::hex;
 using x3::string;
 using x3::ushort_;
 using x3::attr;
+using x3::lexeme;
+using x3::eoi;
+using x3::space;
 
 x3::rule<class url, ast::URLParts> const url = "url";
 x3::rule<class query, ast::QueryParameters> const query = "query";
@@ -71,18 +75,18 @@ auto const xchar = unreserved | reserved | escape;
 auto digits = +digit;
 
 // hostname part
-//auto const domainlabel = alnum | alnum >> *(alnum | char_('-')) >> alnum;
-// NOTE: This should disallow '-' at the beginning and end of the string
-auto const domainlabel = +(alnum | char_('-'));
-//auto const toplabel = alpha | alpha >> *(alnum | char_('-')) >> alnum;
+auto const mid = alnum | char_('-');
+auto const mid_string = *(mid >> !(eoi | space | '.' | '/' | '?'));
+auto const domainlabel = alnum >> -(mid_string >> alnum);
+auto const toplabel = alpha >> -(mid_string >> alnum);
 // NOTE: Top label should dissallow num in the first char
-auto const toplabel = +(alnum | char_('-'));
 auto const user = *(uchar | char_(";?&="));
 auto const password = *(uchar | char_(";?&="));
 auto const urlpath = *xchar;
 auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
                         digits >> char_('.') >> digits;
-auto const hostname = *(domainlabel >> char_('.')) >> toplabel;
+auto const hostname = x3::rule<class hostname, std::string>() =
+    +(domainlabel >> char_('.')) >> toplabel;
 auto const host = hostname | hostnumber;
 auto const port = ushort_;
 auto const hostport = host >> -(':' >> port);
@@ -92,16 +96,14 @@ auto const login = -(user >> -(':' >> password)) >> hostport;
     auto const protocol = string("https") | string("http");
 auto const normal_char = ~char_("?/%");
 auto const quoted_char = (lit('%') >> hex >> hex);
-auto const hostname_old = +(normal_char | quoted_char);
 auto const path = char_('/') >> +(~char_('?'));
 // Query part
 auto const query_word = +(~char_("?&="));
 auto const query_pair = query_word >> lit('=') >> query_word;
 auto const query_def =
     lit('?') >> *(query_pair) % lit('&');
-auto const url_def = protocol >> lit("://") >> hostname_old >>
-                     (path | attr("")) >>
-                     (query_def | attr(std::map<std::string, std::string>()));
+auto const url_def = protocol >> lit("://") >> hostname >> (path | attr(""));
+                     //(query_def | attr(std::map<std::string, std::string>()));
 
 BOOST_SPIRIT_DEFINE(query, url);
 
