@@ -8,6 +8,7 @@
 #include <boost/fusion/include/std_pair.hpp>
 #include <boost/range.hpp>
 #include <boost/spirit/home/x3.hpp>
+#include <boost/optional/optional_io.hpp>
 
 namespace RESTClient {
 
@@ -76,7 +77,7 @@ auto digits = +digit;
 
 // hostname part
 auto const mid = alnum | char_('-');
-auto const mid_string = *(mid >> !(eoi | space | '.' | '/' | '?'));
+auto const mid_string = *(mid >> &(mid));
 auto const domainlabel = alnum >> -(mid_string >> alnum);
 auto const toplabel = alpha >> -(mid_string >> alnum);
 // NOTE: Top label should dissallow num in the first char
@@ -86,7 +87,7 @@ auto const urlpath = *xchar;
 auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
                         digits >> char_('.') >> digits;
 auto const hostname = x3::rule<class hostname, std::string>() =
-    +(domainlabel >> char_('.')) >> toplabel;
+    *(domainlabel >> char_('.')) >> toplabel;
 auto const host = hostname | hostnumber;
 auto const port = ushort_;
 auto const hostport = host >> -(':' >> port);

@@ -2,10 +2,11 @@
 #include <RESTClient/base/logger.hpp>
 
 #include <boost/config/warning_disable.hpp>
-#include <boost/spirit/home/x3.hpp>
 #include <boost/fusion/include/adapt_struct.hpp>
-#include <boost/fusion/include/std_pair.hpp>
 #include <boost/fusion/include/io.hpp>
+#include <boost/fusion/include/std_pair.hpp>
+#include <boost/optional/optional.hpp>
+#include <boost/spirit/home/x3.hpp>
 
 #include <string>
 #include <cassert>
@@ -89,21 +90,26 @@ void testQueryPair(const std::string& label) {
   }
 }
 
-
-
-/*
-void testHostPort(const std::string &label, unsigned short portToTest = 8000) {
+void testHostPort(const std::string &label, const std::string &firstPart,
+                  boost::optional<unsigned short> portToTest = {}) {
   LOG_INFO("Test hostport: " << label);
   auto begin = label.cbegin();
   auto end = label.cend();
-  std::pair<std::string, x3::optional<unsigned short>> out;
+  std::pair<std::string, boost::optional<unsigned short>> out;
   bool worked =
       x3::phrase_parse(begin, end, x3::lexeme[hostport], x3::space, out);
   assert(worked);
-  assert(begin == end);
-  EQ(out.first, label);
+  if (begin != end) {
+    std::string compare_to;
+    std::copy(label.cbegin(), begin, std::back_inserter(compare_to));
+    std::stringstream msg;
+    msg << "Failed to do a full parse: " << std::endl << "Label: " << label
+        << std::endl << "copyd: " << compare_to << std::endl;
+    throw runtime_error(msg.str());
+  }
+  EQ(out.first, firstPart);
   EQ(out.second, portToTest);
-}  */
+}
 
 int main(int , char**)
 {
@@ -130,10 +136,11 @@ int main(int , char**)
   testTopLabel("com");
 
   testHostName("some.host.com");
+  testHostName("somewhere");
 
-  //testHostPort("other-host.com", 80);
-  // testHostPort("somwhere:8080", 8080);
-  // testHostPort("somwhere.com:8000", 8000);
+  testHostPort("other-host.com", "other-host.com");
+  testHostPort("somewhere:8080", "somewhere", 8080);
+  testHostPort("somewhere.com:8000", "somewhere.com", 8000);
 
   testQueryWord("abc");
   testQueryPair("abc=123");
@@ -144,7 +151,6 @@ int main(int , char**)
   EQ(params.size(), 2);
   EQ(params.at("a"), "1");
   EQ(params.at("b"), "2");
-
 
   return 0;
 }
