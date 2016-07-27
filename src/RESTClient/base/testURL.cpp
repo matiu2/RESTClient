@@ -97,7 +97,7 @@ void testHostPort(const std::string &label, const std::string &firstPart,
   auto end = label.cend();
   std::pair<std::string, boost::optional<unsigned short>> out;
   bool worked =
-      x3::phrase_parse(begin, end, x3::lexeme[hostport_def], x3::space, out);
+      x3::phrase_parse(begin, end, x3::lexeme[hostport], x3::space, out);
   assert(worked);
   if (begin != end) {
     std::string compare_to;
@@ -121,9 +121,9 @@ void testUserPass(const std::string &label, const std::string &username,
   LOG_INFO("Test username and password: " << label);
   auto begin = label.cbegin();
   auto end = label.cend();
-  userpass_type out;
+  std::pair<std::string, std::string> out;
   bool worked =
-      x3::phrase_parse(begin, end, x3::lexeme[userpass_def], x3::space, out);
+      x3::phrase_parse(begin, end, x3::lexeme[userpass], x3::space, out);
   assert(worked);
   if (begin != end) {
     std::string compare_to;
@@ -141,13 +141,16 @@ void testUserPass(const std::string &label, const std::string &username,
 }
 
 /*
-void testUserPassHost(const std::string &url, const std::string& username, const std::string& password, const std::string& hostname,
-                  boost::optional<unsigned short> portToTest = {}) {
+void testLogin(const std::string &url, const std::string &username,
+               const std::string &password, const std::string &hostname,
+               boost::optional<unsigned short> portToTest = {}) {
   LOG_INFO("Test username and password: " << url);
   auto begin = url.cbegin();
   auto end = url.cend();
-  std::tuple<std::string, std::string,
-             std::pair<std::string, boost::optional<unsigned short>>> out;
+  using userpass_type = std::pair<std::string, std::string>;
+  using login_type = std::tuple<boost::optional<userpass_type>, std::string,
+                                boost::optional<unsigned short>>;
+  login_type out;
   bool worked =
       x3::phrase_parse(begin, end, x3::lexeme[login], x3::space, out);
   assert(worked);
@@ -159,10 +162,10 @@ void testUserPassHost(const std::string &url, const std::string& username, const
         << std::endl << "copyd: " << compare_to << std::endl;
     throw runtime_error(msg.str());
   }
-  EQ(std::get<0>(out), username);
-  EQ(std::get<1>(out), password);
-  EQ(std::get<2>(out).first, hostname);
-  EQ(std::get<2>(out).second, portToTest);
+  //EQ(std::get<0>(out), username);
+  //EQ(std::get<1>(out), password);
+  //EQ(std::get<2>(out).first, hostname);
+  //EQ(std::get<2>(out).second, portToTest);
 }
   */
 
@@ -204,6 +207,7 @@ int main(int , char**)
   testUserPass("Doctor:who", "Doctor", "who");
 
   //testLogin("mister@somewhere.co.uk", "mister", "", "somewhere.co.uk");
+
   testQueryWord("abc");
   testQueryPair("abc=123");
 

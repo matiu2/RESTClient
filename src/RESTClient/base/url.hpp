@@ -60,16 +60,6 @@ using x3::space;
 x3::rule<class url, ast::URLParts> const url = "url";
 x3::rule<class query, ast::QueryParameters> const query = "query";
 
-using hostport_type = std::pair<std::string, boost::optional<unsigned short>>;
-x3::rule<hostport_type> const hostport = "hostport";
-
-using userpass_type = std::pair<std::string, std::string>;
-x3::rule<userpass_type> const userpass = "userpass";
-
-using login_type = std::tuple<boost::optional<userpass_type>, std::string,
-                              boost::optional<unsigned short>>;
-x3::rule<login_type> const login = "login";
-
 // from RFC1738
 // characters
 
@@ -98,11 +88,11 @@ auto const hostname = x3::rule<class hostname, std::string>() =
     *(domainlabel >> char_('.')) >> toplabel;
 auto const host = hostname | hostnumber;
 auto const port = ushort_;
-auto const hostport_def = host >> -(':' >> port);
-auto const user_string = x3::rule<class user_string, std::string>() =
-    +(uchar - (lit(':') | '@') | char_(';') | char_('?') | char_('&') | char_('='));
-auto const userpass_def = user_string >> ((':' >> user_string) | string(""));
-auto const login_def = -(userpass_def) >> hostport_def;
+auto const hostport = host >> -(':' >> port);
+auto const user_string = +(uchar - (lit(':') | '@') | char_(';') | char_('?') |
+                           char_('&') | char_('='));
+auto const userpass= user_string >> ((':' >> user_string) | string(""));
+auto const login = -(userpass) >> hostport;
 
     // Older bits
     auto const protocol = string("https") | string("http");
@@ -110,17 +100,14 @@ auto const normal_char = ~char_("?/%");
 auto const quoted_char = (lit('%') >> hex >> hex);
 auto const path = char_('/') >> +(~char_('?'));
 // Query part
-auto const query_word = x3::rule<class query_word, std::string>() =
-    +(~char_("?&="));
-auto const query_pair =
-    x3::rule<class query_pair, std::pair<std::string, std::string>>() =
-        query_word >> '=' >> query_word;
+auto const query_word = +(~char_("?&="));
+auto const query_pair = query_word >> '=' >> query_word;
 auto const query_def =
     lit('?') >> *(query_pair) % '&';
 auto const url_def = protocol >> "://" >> hostname >> (path | attr(""));
                      //(query_def | attr(std::map<std::string, std::string>()));
 
-BOOST_SPIRIT_DEFINE(url, query, hostport, userpass, login);
+BOOST_SPIRIT_DEFINE(url, query);
 
 class URL {
 private:
