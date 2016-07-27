@@ -86,7 +86,7 @@ auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
                         digits >> char_('.') >> digits;
 auto const hostname = x3::rule<class hostname, std::string>() =
     *(domainlabel >> char_('.')) >> toplabel;
-auto const host = hostname | hostnumber;
+auto const host = hostnumber | hostname;
 auto const port = ushort_;
 auto const hostport = host >> -(':' >> port);
 auto const user_string = +(uchar - (lit(':') | '@') | char_(';') | char_('?') |

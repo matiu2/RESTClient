@@ -140,7 +140,6 @@ void testUserPass(const std::string &label, const std::string &username,
     EQ(out.second, password);
 }
 
-/*
 void testLogin(const std::string &url, const std::string &username,
                const std::string &password, const std::string &hostname,
                boost::optional<unsigned short> portToTest = {}) {
@@ -150,7 +149,8 @@ void testLogin(const std::string &url, const std::string &username,
   using userpass_type = std::pair<std::string, std::string>;
   using login_type = std::tuple<boost::optional<userpass_type>, std::string,
                                 boost::optional<unsigned short>>;
-  login_type out;
+  std::tuple<boost::optional<std::pair<std::string, std::string>>, std::string,
+             boost::optional<unsigned int>> out;
   bool worked =
       x3::phrase_parse(begin, end, x3::lexeme[login], x3::space, out);
   assert(worked);
@@ -167,7 +167,6 @@ void testLogin(const std::string &url, const std::string &username,
   //EQ(std::get<2>(out).first, hostname);
   //EQ(std::get<2>(out).second, portToTest);
 }
-  */
 
 int main(int , char**)
 {
@@ -206,7 +205,7 @@ int main(int , char**)
   testUserPass("mister", "mister", {});
   testUserPass("Doctor:who", "Doctor", "who");
 
-  //testLogin("mister@somewhere.co.uk", "mister", "", "somewhere.co.uk");
+  testLogin("mister@somewhere.co.uk", "mister", "", "somewhere.co.uk");
 
   testQueryWord("abc");
   testQueryPair("abc=123");
