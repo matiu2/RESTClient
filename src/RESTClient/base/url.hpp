@@ -60,6 +60,17 @@ using x3::space;
 x3::rule<class url, ast::URLParts> const url = "url";
 x3::rule<class query, ast::QueryParameters> const query = "query";
 
+using hostport_type = std::pair<std::string, boost::optional<unsigned short>>;
+x3::rule<hostport_type> const hostport = "hostport";
+
+using userpass_type =
+    std::pair<std::string, boost::optional<std::string>>;
+x3::rule<userpass_type> const userpass = "userpass";
+
+using login_type = std::tuple<boost::optional<userpass_type>, std::string,
+                              boost::optional<unsigned short>>;
+x3::rule<login_type> const login = "login";
+
 // from RFC1738
 // characters
 
@@ -81,8 +92,6 @@ auto const mid_string = *(mid >> &(mid));
 auto const domainlabel = alnum >> -(mid_string >> alnum);
 auto const toplabel = alpha >> -(mid_string >> alnum);
 // NOTE: Top label should dissallow num in the first char
-auto const user = *(uchar | char_(";?&="));
-auto const password = *(uchar | char_(";?&="));
 auto const urlpath = *xchar;
 auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
                         digits >> char_('.') >> digits;
@@ -90,8 +99,11 @@ auto const hostname = x3::rule<class hostname, std::string>() =
     *(domainlabel >> char_('.')) >> toplabel;
 auto const host = hostname | hostnumber;
 auto const port = ushort_;
-auto const hostport = host >> -(':' >> port);
-auto const login = -(user >> -(':' >> password)) >> hostport;
+auto const hostport_def = host >> -(':' >> port);
+auto const user_string = x3::rule<class user_string, std::string>() =
+    +(uchar | char_(';') | char_('?') | char_('&') | char_('='));
+auto const userpass_def = user_string >> -(':' >> user_string);
+auto const login_def = -(userpass_def) >> hostport_def;
 
     // Older bits
     auto const protocol = string("https") | string("http");
@@ -109,7 +121,7 @@ auto const query_def =
 auto const url_def = protocol >> "://" >> hostname >> (path | attr(""));
                      //(query_def | attr(std::map<std::string, std::string>()));
 
-BOOST_SPIRIT_DEFINE(query, url);
+BOOST_SPIRIT_DEFINE(url, query, hostport, userpass, login);
 
 class URL {
 private:
