@@ -63,8 +63,7 @@ x3::rule<class query, ast::QueryParameters> const query = "query";
 using hostport_type = std::pair<std::string, boost::optional<unsigned short>>;
 x3::rule<hostport_type> const hostport = "hostport";
 
-using userpass_type =
-    std::pair<std::string, boost::optional<std::string>>;
+using userpass_type = std::pair<std::string, std::string>;
 x3::rule<userpass_type> const userpass = "userpass";
 
 using login_type = std::tuple<boost::optional<userpass_type>, std::string,
@@ -101,8 +100,8 @@ auto const host = hostname | hostnumber;
 auto const port = ushort_;
 auto const hostport_def = host >> -(':' >> port);
 auto const user_string = x3::rule<class user_string, std::string>() =
-    +(uchar | char_(';') | char_('?') | char_('&') | char_('='));
-auto const userpass_def = user_string >> -(':' >> user_string);
+    +(uchar - (lit(':') | '@') | char_(';') | char_('?') | char_('&') | char_('='));
+auto const userpass_def = user_string >> ((':' >> user_string) | string(""));
 auto const login_def = -(userpass_def) >> hostport_def;
 
     // Older bits

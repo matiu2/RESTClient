@@ -117,7 +117,7 @@ void testUser(const std::string label) {
 }
 
 void testUserPass(const std::string &label, const std::string &username,
-                  const boost::optional<std::string> &password) {
+                  const std::string &password = "") {
   LOG_INFO("Test username and password: " << label);
   auto begin = label.cbegin();
   auto end = label.cend();
@@ -134,7 +134,10 @@ void testUserPass(const std::string &label, const std::string &username,
     throw runtime_error(msg.str());
   }
   EQ(out.first, username);
-  EQ(out.second, password);
+  if (password.empty())
+    assert(out.second.empty());
+  else
+    EQ(out.second, password);
 }
 
 /*
@@ -197,9 +200,10 @@ int main(int , char**)
 
   testUser("mister");
   testUser(";?&=mister");
-  //testUserPass("mister@somewhere.co.uk", "mister", "", "somewhere.co.uk");
   testUserPass("mister", "mister", {});
+  testUserPass("Doctor:who", "Doctor", "who");
 
+  //testLogin("mister@somewhere.co.uk", "mister", "", "somewhere.co.uk");
   testQueryWord("abc");
   testQueryPair("abc=123");
 
