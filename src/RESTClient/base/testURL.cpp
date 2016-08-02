@@ -229,6 +229,16 @@ int main(int , char**)
   EQ(megaTest1.parts().queryParameters.at("flying"), "true");
   EQ(megaTest1.parts().queryParameters.at("time"), "travel");
 
-  LOG_INFO("Mega Test 1 - PASSED");
+  URL megaTest2("https://doctor@somewhere.com:9000/some/path?");
+  LOG_INFO("Mega Test 2: " << megaTest2);
+  EQ(megaTest2.parts().protocol, "https");
+  EQ(megaTest2.parts().username, "doctor");
+  EQ(megaTest2.parts().password, "");
+  EQ(megaTest2.parts().hostname, "somewhere.com");
+  EQ(megaTest2.parts().port(), 9000);
+  EQ(megaTest2.parts().path, "/some/path");
+  EQ(megaTest2.parts().queryParameters.size(), 0);
+
+  LOG_INFO("Mega Test 2 - PASSED");
   return 0;
 }
