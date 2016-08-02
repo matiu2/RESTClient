@@ -108,7 +108,6 @@ int main(int argc, char *argv[]) {
     std::string hostname = 
     boost::iterator_range afterProto = syd_cf_url
 
-
     auto &q = jobs.queue(syd_cf_url);
 
     q.emplace(RESTClient::QueuedJob{"Ensure container", syd_cf_url,
@@ -125,7 +124,6 @@ int main(int argc, char *argv[]) {
     jobs.startProcessing();
 
   };
-
 
   jobs.queue("https://identity.api.rackspacecloud.com").emplace(RESTClient::QueuedJob{
       "Login", "https://identity.api.rackspacecloud.com/v2.0/tokens",
@@ -152,18 +150,19 @@ int main(int argc, char *argv[]) {
 
   RESTClient::Services::instance().io_service.run();
 
-
   jobs.startProcessing();
 
   RESTClient::Services::instance().io_service.run();
 
-/*
-  q.emplace({"Chunked Transmit", syd_cf_url, [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
+  // Upload then download alphabeto to cloud files
+  q.emplace({"Chunked Transmit", syd_cf_url.hostname, [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
+    // Upload
     boost::iostream::filtering_stream<char> s;
     s.push(AlphabetoSource(1024 * 20));
     HTTP::Request r("POST"), 
+    // Download
+
   });
-  */
 
   return 0;
 }
