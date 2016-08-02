@@ -140,33 +140,6 @@ void testUserPass(const std::string &label, const std::string &username,
     EQ(out.second, password);
 }
 
-/*
-void testLogin(const std::string &url, const std::string &username,
-               const std::string &password, const std::string &hostname,
-               boost::optional<unsigned short> portToTest = {}) {
-  LOG_INFO("Test username and password: " << url);
-  auto begin = url.cbegin();
-  auto end = url.cend();
-  std::tuple<std::string, std::string, std::string,
-             boost::optional<unsigned short>> out;
-  bool worked =
-      x3::phrase_parse(begin, end, x3::lexeme[login], x3::space, out);
-  assert(worked);
-  if (begin != end) {
-    std::string compare_to;
-    std::copy(url.cbegin(), begin, std::back_inserter(compare_to));
-    std::stringstream msg;
-    msg << "Failed to do a full parse: " << std::endl << "url: " << url
-        << std::endl << "copyd: " << compare_to << std::endl;
-    throw runtime_error(msg.str());
-  }
-  //EQ(std::get<0>(out), username);
-  //EQ(std::get<1>(out), password);
-  //EQ(std::get<2>(out).first, hostname);
-  //EQ(std::get<2>(out).second, portToTest);
-}
-*/
-
 int main(int , char**)
 {
   testDomainLabel("somewhere");
