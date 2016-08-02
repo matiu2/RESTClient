@@ -3,6 +3,7 @@
 
 
 #include <RESTClient/base/logger.hpp>
+#include <RESTClient/base/url.hpp>
 #include <RESTClient/http/HTTP.hpp>
 #include <RESTClient/http/Services.hpp>
 #include <RESTClient/jobManagement/JobRunner.hpp>
@@ -72,7 +73,7 @@ int main(int argc, char *argv[]) {
     const std::string &token = info["access"]["token"]["id"];
     std::cout << "Token: " << token << std::endl;
 
-    std::string syd_cf_url;
+    RESTClient::URL syd_cf_url;
 
     const json::JList &catalog = info["access"]["serviceCatalog"];
     for (const JMap &service : catalog)

@@ -1,4 +1,4 @@
-#include <RESTClient/base/url.hpp>
+#include <RESTClient/base/url.cpp> // We need to import the .cpp so to access it's internals
 #include <RESTClient/base/logger.hpp>
 
 #include <boost/config/warning_disable.hpp>
@@ -20,6 +20,8 @@ using namespace RESTClient;
               << a << " - b: " << b << " - Line: " << __LINE__ << " - File: "  \
               << __FILE__ << " - Function: " << __FUNCTION__ << std::endl);    \
   }
+
+namespace x3 = boost::spirit::x3;
 
 template <typename T>
 void test(const std::string &label, const T &parser) {
