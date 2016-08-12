@@ -7,6 +7,7 @@
 #include <boost/fusion/include/std_pair.hpp>
 #include <boost/optional/optional.hpp>
 #include <boost/spirit/home/x3.hpp>
+#include <boost/any.hpp>
 
 #include <string>
 #include <cassert>
@@ -113,6 +114,72 @@ void testHostPort(const std::string &label, const std::string &firstPart,
   EQ(out.second, portToTest);
 }
 
+template <typename T> using bo = boost::optional<T>;
+
+void testLogin(const std::string &input, const std::string &hostname,
+               boost::optional<std::string> username,
+               boost::optional<std::string> password,
+               boost::optional<unsigned short> port) {
+  LOG_INFO("Test login: " << input);
+  auto begin = input.cbegin();
+  auto end = input.cend();
+  using bos = bo<std::string>;
+  using bon = bo<unsigned short>;
+  using bt = bo<std::pair<std::string, std::string>>;
+  bool worked =
+      x3::phrase_parse(begin, end, x3::lexeme[login], x3::space);
+  assert(worked);
+  if (begin != end) {
+    std::string compare_to;
+    std::copy(input.cbegin(), begin, std::back_inserter(compare_to));
+    std::stringstream msg;
+    msg << "Failed to do a full parse: " << std::endl << "input: " << input
+        << std::endl << "copyd: " << compare_to << std::endl;
+    throw runtime_error(msg.str());
+  }
+  /*
+   * Currently we're not parsing the output into any structure. Just making sure that it can parse.
+  auto &userpass = std::get<0>(out);
+  if (userpass) {
+    assert(username);
+    if (username) {
+      EQ(std::get<0>(userpass.get()), username.get());
+    } else {
+      EQ(std::get<0>(userpass.get()), "");
+    }
+    auto &out_pass = std::get<1>(userpass.get()).get();
+    EQ(out_pass, password);
+  }
+  EQ(std::get<1>(out), hostname);
+  EQ(std::get<2>(out), port);
+  */
+}
+
+void testHostInfo(const std::string &input, const std::string &protocol,
+                  const std::string &hostname, const std::string &username,
+                  const std::string &password, unsigned short port) {
+  LOG_INFO("Test hostinfo: " << input);
+  auto begin = input.cbegin();
+  auto end = input.cend();
+  RESTClient::HostInfo out;
+  bool worked =
+      x3::phrase_parse(begin, end, hostInfo_def, x3::space, out);
+  assert(worked);
+  if (begin != end) {
+    std::string compare_to;
+    std::copy(input.cbegin(), begin, std::back_inserter(compare_to));
+    std::stringstream msg;
+    msg << "Failed to do a full parse: " << std::endl << "input: " << input
+        << std::endl << "copyd: " << compare_to << std::endl;
+    throw runtime_error(msg.str());
+  }
+  EQ(out.protocol, protocol);
+  EQ(out.hostname, hostname);
+  EQ(out.password, password);
+  EQ(out.username, username);
+  EQ(out.getPort(), port);
+}
+
 void testUser(const std::string label) {
   LOG_INFO("Test User: " << label);
   test(label, user_string);
@@ -124,8 +191,10 @@ void testUserPass(const std::string &label, const std::string &username,
   auto begin = label.cbegin();
   auto end = label.cend();
   std::pair<std::string, std::string> out;
+  auto myRule = x3::rule<class UserPassClass, decltype(out)>() =
+      x3::lexeme[userpass];
   bool worked =
-      x3::phrase_parse(begin, end, x3::lexeme[userpass], x3::space, out);
+      x3::phrase_parse(begin, end, myRule, x3::space, out);
   assert(worked);
   if (begin != end) {
     std::string compare_to;
@@ -146,6 +215,7 @@ int main(int , char**)
 {
   testDomainLabel("somewhere");
   testDomainLabel("s");
+  testDomainLabel("s-aw");
   testDomainLabel("s-w");
 
   testTopLabel("com");
@@ -164,55 +234,78 @@ int main(int , char**)
   testUserPass("mister", "mister", {});
   testUserPass("Doctor:who", "Doctor", "who");
 
+  testLogin("other-host.com", "other-host.com", {}, {}, {});
+  testLogin("somewhere:8080", "somewhere", {}, {}, 8080);
+  testLogin("somewhere.com", "somewhere.com", {}, {}, {});
+  using bs = boost::optional<std::string>;
+  testLogin("mister:awesome@somewhere.com:8000", "somewhere.com", bs("mister"),
+            bs("awesome"), 8000);
+  testLogin("mister@somewhere.com:2362", "somewhere.com", bs("mister"), {},
+            2362);
+  testLogin("123.100.200.300:65000", "123.100.200.300", {}, {}, 65000);
+
+  testHostInfo("http://other-host.com", "http", "other-host.com", "", "", 80);
+  testHostInfo("https://somewhere:8080", "https", "somewhere", "", "", 8080);
+  testHostInfo("https://somewhere.com", "https", "somewhere.com", "", "", 443);
+  testHostInfo("http://mister:awesome@somewhere.com:8000", "http", "somewhere.com", "mister", "awesome", 8000);
+  testHostInfo("http://mister@somewhere.com:2362", "http", "somewhere.com", "mister", "", 2362);
+  testHostInfo("https://123.100.200.300:65000", "https", "123.100.200.300", "", "", 65000);
+
   //testLogin("mister@somewhere.co.uk", "mister", "", "somewhere.co.uk");
 
   testQueryWord("abc");
   testQueryPair("abc=123");
 
   std::string query("?a=1&b=2");
+  LOG_INFO("Testing query string: " << query);
   QueryParameters params;
-  x3::phrase_parse(query.begin(), query.end(), query_def, x3::space, params);
+  x3::phrase_parse(query.begin(), query.end(), lexeme[query_def], x3::space,
+                   params);
   EQ(params.size(), 2);
   EQ(params.at("a"), "1");
   EQ(params.at("b"), "2");
 
-  URL test1("http://somewhere.com");
-  LOG_INFO("Test 1: " << test1);
-  EQ(test1.parts().protocol, "http");
-  EQ(test1.parts().hostname, "somewhere.com");
+  std::string test1_s("http://somewhere.com");
+  LOG_INFO("Test 1: " << test1_s);
+  URL test1(test1_s);
+  EQ(test1.protocol(), "http");
+  EQ(test1.hostname(), "somewhere.com");
   LOG_INFO("URL Test 1 - PASSED");
 
-  URL test2("https://somewhere.com/some/path/");
-  LOG_INFO("URL Test 2: " << test2);
+  std::string test2_s("https://somewhere.com/some/path/");
+  LOG_INFO("URL Test 2: " << test2_s);
+  URL test2(test2_s);
   using namespace std;
-  cout << "Protocol: " << test2.parts().protocol << endl
-       << "Hostname: " << test2.parts().hostname << endl;
-  EQ(test2.parts().protocol, "https");
-  EQ(test2.parts().hostname, "somewhere.com");
-  EQ(test2.parts().path, "/some/path/");
+  cout << "Protocol: " << test2.protocol() << endl
+       << "Hostname: " << test2.hostname() << endl;
+  EQ(test2.protocol(), "https");
+  EQ(test2.hostname(), "somewhere.com");
+  EQ(test2.path(), "/some/path/");
   LOG_INFO("Test 2 - PASSED");
 
-  URL megaTest1("https://doctor:who@somewhere.com:9000/some/path?flying=true&time=travel");
-  LOG_INFO("Mega Test 1: " << megaTest1);
-  EQ(megaTest1.parts().protocol, "https");
-  EQ(megaTest1.parts().username, "doctor");
-  EQ(megaTest1.parts().password, "who");
-  EQ(megaTest1.parts().hostname, "somewhere.com");
-  EQ(megaTest1.parts().port(), 9000);
-  EQ(megaTest1.parts().path, "/some/path");
-  EQ(megaTest1.parts().queryParameters.size(), 2);
-  EQ(megaTest1.parts().queryParameters.at("flying"), "true");
-  EQ(megaTest1.parts().queryParameters.at("time"), "travel");
+  std::string megaTest1_s("https://doctor:who@somewhere.com:9000/some/path?flying=true&time=travel");
+  LOG_INFO("Mega Test 1: " << megaTest1_s);
+  URL megaTest1(megaTest1_s);
+  EQ(megaTest1.protocol(), "https");
+  EQ(megaTest1.username(), "doctor");
+  EQ(megaTest1.password(), "who");
+  EQ(megaTest1.hostname(), "somewhere.com");
+  EQ(megaTest1.port(), 9000);
+  EQ(megaTest1.path(), "/some/path");
+  EQ(megaTest1.queryParameters().size(), 2);
+  EQ(megaTest1.queryParameters().at("flying"), "true");
+  EQ(megaTest1.queryParameters().at("time"), "travel");
 
-  URL megaTest2("https://doctor@somewhere.com:9000/some/path?");
-  LOG_INFO("Mega Test 2: " << megaTest2);
-  EQ(megaTest2.parts().protocol, "https");
-  EQ(megaTest2.parts().username, "doctor");
-  EQ(megaTest2.parts().password, "");
-  EQ(megaTest2.parts().hostname, "somewhere.com");
-  EQ(megaTest2.parts().port(), 9000);
-  EQ(megaTest2.parts().path, "/some/path");
-  EQ(megaTest2.parts().queryParameters.size(), 0);
+  std::string megaTest2_s("https://doctor@somewhere.com:9000/some/path?");
+  LOG_INFO("Mega Test 2: " << megaTest2_s);
+  URL megaTest2(megaTest2_s);
+  EQ(megaTest2.protocol(), "https");
+  EQ(megaTest2.username(), "doctor");
+  EQ(megaTest2.password(), "");
+  EQ(megaTest2.hostname(), "somewhere.com");
+  EQ(megaTest2.port(), 9000);
+  EQ(megaTest2.path(), "/some/path");
+  EQ(megaTest2.queryParameters().size(), 0);
 
   LOG_INFO("Mega Test 2 - PASSED");
   return 0;

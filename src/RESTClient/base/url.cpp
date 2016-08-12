@@ -7,6 +7,16 @@
 
 namespace RESTClient {
 
+std::ostream &operator<<(std::ostream &o, const HostInfo &host) {
+  o << (std::string)host;
+  return o;
+}
+
+std::ostream &operator<<(std::ostream &o, const URL &url) {
+  o << url.str();
+  return o;
+}
+
 namespace x3 = boost::spirit::x3;
 namespace ascii = boost::spirit::x3::ascii;
 
@@ -23,6 +33,7 @@ using x3::lexeme;
 using x3::eoi;
 using x3::space;
 
+x3::rule<class url, HostInfo> const hostInfo = "hostInfo";
 x3::rule<class url, URLParts> const url = "url";
 
 // from RFC1738
@@ -41,44 +52,58 @@ auto const xchar = unreserved | reserved | escape;
 auto digits = +digit;
 
 // hostname part
-auto const mid = alnum | char_('-');
-auto const mid_string = *(mid >> &(mid));
-auto const domainlabel = alnum >> -(mid_string >> alnum);
-auto const toplabel = alpha >> -(mid_string >> alnum);
+auto const domain_string = *((+char_('-') >> +alnum) | +alnum);
+auto const domainlabel = +alnum >> domain_string;
+auto const toplabel = +alpha >> domain_string;
 // NOTE: Top label should dissallow num in the first char
-auto const urlpath = *xchar;
 auto const hostnumber = digits >> char_('.') >> digits >> char_('.') >>
                         digits >> char_('.') >> digits;
 auto const hostname = *(domainlabel >> char_('.')) >> toplabel;
 auto const host = hostnumber | hostname;
 auto const port = ushort_;
 auto const hostport = host >> -(':' >> port);
-auto const user_string = +(uchar - (lit(':') | '@') | char_(';') | char_('?') |
-                           char_('&') | char_('='));
+auto const user_string =
+    +(uchar - (lit(':') | '@') | ';' | '?' | '&' | '=') | attr("");
 auto const userpass =
-    user_string >> ((':' >> user_string) | string(""));
+    user_string >> -(':' >> user_string);
 auto const login = -(userpass >> '@') >> hostport;
 
 // Misc
 auto const protocol = string("https") | string("http");
-auto const path = char_('/') >> +(~char_('?'));
+auto const path = char_('/') >> +xchar;
 
 // Query part
 auto const query_word = +(~char_("?&="));
 auto const query_pair = query_word >> '=' >> query_word;
 auto const query_def = lit('?') >> -(query_pair % '&');
-auto const url_def =
-    lexeme[protocol >> "://" >> login >> (path | attr("")) >> -query_def];
+auto const hostInfo_def = lexeme[protocol >> "://" >> login];
+auto const url_def = lexeme[(path | attr("")) >> -query_def];
 
-BOOST_SPIRIT_DEFINE(url);
+BOOST_SPIRIT_DEFINE(hostInfo, url);
+
+HostInfo::HostInfo(const std::string &url) {
+  auto it = url.begin();
+  bool ok = x3::phrase_parse(it, url.end(), hostInfo_def, x3::space, *this);
+  assert(ok);
+}
 
 void URL::parse() {
-  x3::phrase_parse(_url.begin(), _url.end(), url_def, x3::space, _parts);
+  auto it = _url.begin();
+  bool ok = x3::phrase_parse(it, _url.end(), hostInfo_def, x3::space, parts.hostInfo);
+  assert(ok);
+  if (it != _url.end()) {
+    ok = x3::phrase_parse(it, _url.end(), url_def, x3::space, parts);
+    assert(ok);
+    assert(it == _url.end());
+  }
 }
 }
 
 BOOST_FUSION_ADAPT_STRUCT(
-    RESTClient::URLParts,
+    RESTClient::HostInfo,
     (std::string, protocol)(std::string, username)(std::string, password)(
-        std::string, hostname)(boost::optional<unsigned int>, _port)(
-        std::string, path)(RESTClient::QueryParameters, queryParameters));
+        std::string, hostname)(boost::optional<unsigned int>, port));
+
+BOOST_FUSION_ADAPT_STRUCT(RESTClient::URLParts,
+                          (std::string, path)(RESTClient::QueryParameters,
+                                              queryParameters));

@@ -13,7 +13,7 @@ if (${BUILD_TESTS})
     # Tests zipped and chunked uploads against the Rackspace cloudfiles API
     # Requires settings RS_USERNAME, RS_APIKEY, and RS_REGION
     add_executable(testRackspaceAPI testRackspaceAPI.cpp)
-    target_link_libraries(testRackspaceAPI RESTClient ${Boost_REGEX_LIBRARY})
+    target_link_libraries(testRackspaceAPI RESTClient ${JSON_LIB} ${Boost_REGEX_LIBRARY})
     add_test(testHTTP testHTTP)
   endif()
 endif(${BUILD_TESTS})

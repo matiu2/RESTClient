@@ -7,6 +7,7 @@
 
 #include <fstream>
 
+#include <RESTClient/base/url.hpp>
 #include <RESTClient/http/Services.hpp>
 #include <RESTClient/http/HTTPResponse.hpp>
 #include <RESTClient/http/HTTPRequest.hpp>
@@ -35,7 +36,7 @@ using boost::iostreams::filtering_ostream;
 // Handle an HTTP connection
 class HTTP {
 private:
-  std::string hostname;
+  const HostInfo& hostInfo;
   Services& services;
   asio::yield_context yield;
   bool is_ssl;
@@ -55,7 +56,7 @@ private:
   void makeOutput();
 
 public:
-  HTTP(const std::string &hostname, asio::yield_context yield);
+  HTTP(const HostInfo &hostInfo, asio::yield_context yield);
   HTTP(const HTTP&) = delete;
   ~HTTP();
 

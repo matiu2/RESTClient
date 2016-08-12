@@ -40,7 +40,7 @@ void HTTP::addDefaultHeaders(HTTPRequest &request) {
   // Host
   std::string *value = &request.headers["Host"];
   if (value->empty())
-    *value = hostname;
+    *value = hostInfo.hostname;
   // Accept */*
   value = &request.headers["Accept"];
   if (value->empty())
@@ -96,41 +96,24 @@ void transmitBody(filtering_ostream &transmitter, HTTPRequest &request,
     chunkedTransmit(transmitter, body);
 }
 
-HTTP::HTTP(const std::string &rawHostname, asio::yield_context yield)
-    : hostname(""), services(Services::instance()), yield(yield),
-      is_ssl(false), ssl_context(services.io_service, ssl::context::sslv23),
+HTTP::HTTP(const HostInfo &hostInfo, asio::yield_context yield)
+    : hostInfo(hostInfo), services(Services::instance()), yield(yield),
+      ssl_context(services.io_service, ssl::context::sslv23),
       sslStream(services.io_service, ssl_context), socket(services.io_service) {
-  LOG_TRACE("HTTP constructor: " << rawHostname);
-  // hostname when passed to us contains http:// or https://
-  // we need to read that to set 'is_ssl'
-  const std::string delim("://");
-  boost::iterator_range<std::string::const_iterator> found =
-      boost::find_first(rawHostname, delim);
-  if (!boost::equal(found, delim)) {
-    LOG_ERROR("Expected hostname to start with "
-              "'http://' or 'https://' but it doesn't: "
-              << rawHostname << " - found: " << found);
-  }
-  auto protocol =
-      boost::make_iterator_range(rawHostname.begin(), found.begin());
-  is_ssl = boost::equal(protocol, std::string("https"));
-  auto hostFound = boost::make_iterator_range(found.end(), rawHostname.end());
-  boost::copy(hostFound, std::back_inserter(hostname));
-  LOG_TRACE("HTTP constructor - protocol: " << protocol
-                                            << " - hostname: " << hostname);
+  LOG_TRACE("HTTP constructor: " << hostInfo);
   // Set up
   ssl_context.set_default_verify_paths();
   sslStream.set_verify_mode(ssl::verify_peer);
-  sslStream.set_verify_callback(ssl::rfc2818_verification(hostname));
+  sslStream.set_verify_callback(ssl::rfc2818_verification(hostInfo.hostname));
 }
 
 HTTP::~HTTP() {
   const char *ending(" should have been closed before destruction");
   if (sslStream.lowest_layer().is_open()) {
-    LOG_FATAL("HTTP SSL Connection to " << hostname << ending);
+    LOG_FATAL("HTTP SSL Connection to " << hostInfo.hostname << ending);
   }
   if (socket.is_open()) {
-    LOG_FATAL("HTTP socket Connection to " << hostname << ending);
+    LOG_FATAL("HTTP socket Connection to " << hostInfo.hostname << ending);
   }
 }
 
@@ -157,7 +140,7 @@ HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
 }
 
 void HTTP::readHTTPReply(HTTPResponse &result) {
-  if (is_ssl)
+  if (hostInfo.is_ssl())
     RESTClient::readHTTPReply(result, yield, sslStream,
                               std::bind(&HTTP::close, this));
   else
@@ -181,10 +164,10 @@ void HTTP::ensureConnection() {
   tcp::resolver::iterator endpoints;
   if (endpoints == decltype(endpoints)()) {
     endpoints = services.resolver.async_resolve(
-        {hostname, is_ssl ? "https" : "http"}, yield);
+        {hostInfo.hostname, hostInfo.protocol}, yield);
   }
   // Connect if needed
-  if (is_ssl) {
+  if (hostInfo.is_ssl()) {
     if (!sslStream.lowest_layer().is_open()) {
       asio::async_connect(sslStream.lowest_layer(), endpoints, yield);
       // Perform SSL handshake and verify the remote host's
@@ -241,7 +224,7 @@ HTTPResponse HTTP::PUT_OR_POST_STREAM(std::string verb, std::string path,
   // TODO: urlencode ? parameters ? other headers ? chunked data support
   request << verb << " " << path << " HTTP/1.1"
           << "\r\n";
-  request << "Host: " << hostname << "\r\n";
+  request << "Host: " << hostInfo.hostname << "\r\n";
   request << "Accept: */*"
           << "\r\n";
   request << "Accept-Encoding: gzip, deflate"

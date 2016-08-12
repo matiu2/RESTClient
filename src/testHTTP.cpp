@@ -13,7 +13,7 @@ using namespace boost;
 using namespace boost::asio::ip; // to get 'tcp::'
 namespace algo = boost::algorithm;
 
-bool testGet(const std::string &name, const std::string &hostname,
+bool testGet(const std::string &name, const RESTClient::HostInfo &hostinfo,
              RESTClient::HTTP &server, bool toFile) {
   LOG_TRACE("testGet: " << name << " starting....")
   RESTClient::HTTPResponse response;
@@ -38,7 +38,7 @@ bool testGet(const std::string &name, const std::string &hostname,
   return true;
 }
 
-bool testPut(const std::string &name, const std::string &hostname,
+bool testPut(const std::string &name, const RESTClient::HostInfo &hostInfo,
              RESTClient::HTTP &server, bool fromFile) {
   LOG_TRACE(name << " starting...");
   std::string source("This is some data");
@@ -54,7 +54,7 @@ bool testPut(const std::string &name, const std::string &hostname,
   return true;
 }
 
-bool testPost(const std::string &name, const std::string &hostname,
+bool testPost(const std::string &name, const RESTClient::HostInfo &hostInfo,
               RESTClient::HTTP &server, bool fromFile) {
   LOG_TRACE(name << " starting....")
   std::string source("This is some data");
@@ -70,7 +70,8 @@ bool testPost(const std::string &name, const std::string &hostname,
   return true;
 }
 
-bool testChunkedGet(const std::string &name, const std::string &hostname,
+bool testChunkedGet(const std::string &name,
+                    const RESTClient::HostInfo &hostInfo,
                     RESTClient::HTTP &server, bool toFile) {
   LOG_TRACE(name << " starting....")
   const int size = 1024;
@@ -117,7 +118,7 @@ bool testChunkedGet(const std::string &name, const std::string &hostname,
   return true;
 }
 
-bool testDelete(const std::string &name, const std::string &hostname,
+bool testDelete(const std::string &name, const RESTClient::HostInfo &hostInfo,
                 RESTClient::HTTP &server, bool fromFile) {
   LOG_TRACE(name << " starting....")
   RESTClient::HTTPResponse response = server.del("/delete");
@@ -128,7 +129,7 @@ bool testDelete(const std::string &name, const std::string &hostname,
   return true;
 }
 
-bool testGZIPGet(const std::string &name, const std::string &hostname,
+bool testGZIPGet(const std::string &name, const RESTClient::HostInfo &hostInfo,
                  RESTClient::HTTP &server, bool toFile) {
   LOG_TRACE(name << " starting....")
   RESTClient::HTTPResponse response;
@@ -154,56 +155,49 @@ int main(int argc, char *argv[]) {
 
   using namespace std::placeholders;
 
+  RESTClient::HostInfo http("http://httpbin.org");
+  RESTClient::HostInfo https("https://httpbin.org");
+
   std::vector<RESTClient::QueuedJob> tests(
       {// HTTP get
-       {"GET Content-Length - no ssl - no file", "http://httpbin.org",
+       {"GET Content-Length - no ssl - no file", http,
         std::bind(testGet, _1, _2, _3, false)},
-       {"GET Content-Length - no ssl - file", "http://httpbin.org",
+       {"GET Content-Length - no ssl - file", http,
         std::bind(testGet, _1, _2, _3, true)},
-       {"GET Content-Length - ssl - no file", "https://httpbin.org",
+       {"GET Content-Length - ssl - no file", https,
         std::bind(testGet, _1, _2, _3, false)},
-       {"GET Content-Length - ssl - file", "https://httpbin.org",
+       {"GET Content-Length - ssl - file", https,
         std::bind(testGet, _1, _2, _3, true)},
        // HTTP chunked get
-       {"GET CHUNKED - no ssl - no file", "http://httpbin.org",
+       {"GET CHUNKED - no ssl - no file", http,
         std::bind(testChunkedGet, _1, _2, _3, false)},
-       {"GET CHUNKED - no ssl - file", "http://httpbin.org",
+       {"GET CHUNKED - no ssl - file", http,
         std::bind(testChunkedGet, _1, _2, _3, true)},
-       {"GET CHUNKED - ssl - no file", "https://httpbin.org",
+       {"GET CHUNKED - ssl - no file", https,
         std::bind(testChunkedGet, _1, _2, _3, false)},
-       {"GET CHUNKED - ssl - file", "https://httpbin.org",
+       {"GET CHUNKED - ssl - file", https,
         std::bind(testChunkedGet, _1, _2, _3, true)},
        // Delete
-       {"DELETE - no ssl", "http://httpbin.org",
-        std::bind(testDelete, _1, _2, _3, false)},
-       {"DELETE - ssl", "https://httpbin.org",
-        std::bind(testDelete, _1, _2, _3, false)},
+       {"DELETE - no ssl", http, std::bind(testDelete, _1, _2, _3, false)},
+       {"DELETE - ssl", https, std::bind(testDelete, _1, _2, _3, false)},
        // Put
-       {"PUT - no ssl - no file", "http://httpbin.org",
-        std::bind(testPut, _1, _2, _3, false)},
-       {"PUT - no ssl - file", "http://httpbin.org",
-        std::bind(testPut, _1, _2, _3, true)},
-       {"PUT - ssl - no file", "https://httpbin.org",
-        std::bind(testPut, _1, _2, _3, false)},
-       {"PUT - ssl - file", "https://httpbin.org",
-        std::bind(testPut, _1, _2, _3, true)},
+       {"PUT - no ssl - no file", http, std::bind(testPut, _1, _2, _3, false)},
+       {"PUT - no ssl - file", http, std::bind(testPut, _1, _2, _3, true)},
+       {"PUT - ssl - no file", https, std::bind(testPut, _1, _2, _3, false)},
+       {"PUT - ssl - file", https, std::bind(testPut, _1, _2, _3, true)},
        // Post
-       {"POST - no ssl - no file", "http://httpbin.org",
-        std::bind(testPut, _1, _2, _3, false)},
-       {"POST - no ssl - file", "http://httpbin.org",
-        std::bind(testPut, _1, _2, _3, true)},
-       {"POST - ssl - no file", "https://httpbin.org",
-        std::bind(testPut, _1, _2, _3, false)},
-       {"POST - ssl - file", "https://httpbin.org",
-        std::bind(testPut, _1, _2, _3, true)},
+       {"POST - no ssl - no file", http, std::bind(testPut, _1, _2, _3, false)},
+       {"POST - no ssl - file", http, std::bind(testPut, _1, _2, _3, true)},
+       {"POST - ssl - no file", https, std::bind(testPut, _1, _2, _3, false)},
+       {"POST - ssl - file", https, std::bind(testPut, _1, _2, _3, true)},
        // HTTP get gzipped content
-       {"GET gzip -Length - no ssl - no file", "http://httpbin.org",
+       {"GET gzip -Length - no ssl - no file", http,
         std::bind(testGZIPGet, _1, _2, _3, false)},
-       {"GET gzip -Length - no ssl - file", "http://httpbin.org",
+       {"GET gzip -Length - no ssl - file", http,
         std::bind(testGZIPGet, _1, _2, _3, true)},
-       {"GET gzip -Length - ssl - no file", "https://httpbin.org",
+       {"GET gzip -Length - ssl - no file", https,
         std::bind(testGZIPGet, _1, _2, _3, false)},
-       {"GET gzip -Length - ssl - file", "https://httpbin.org",
+       {"GET gzip -Length - ssl - file", https,
         std::bind(testGZIPGet, _1, _2, _3, true)}});
 
   RESTClient::JobRunner jobs;
@@ -217,13 +211,13 @@ int main(int argc, char *argv[]) {
     for (auto &job : tests) {
       for (auto &regex : regexs)
         if (boost::regex_search(job.name, regex)) {
-          jobs.queue(job.hostname).emplace(std::move(job));
+          jobs.queue(job.hostInfo).emplace(std::move(job));
           break;
         }
     }
   else {
     for (auto &job : tests)
-      jobs.queue(job.hostname).emplace(std::move(job));
+      jobs.queue(job.hostInfo).emplace(std::move(job));
   }
 
   jobs.startProcessing();

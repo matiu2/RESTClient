@@ -7,9 +7,11 @@
 #include <RESTClient/http/HTTP.hpp>
 #include <RESTClient/http/Services.hpp>
 #include <RESTClient/jobManagement/JobRunner.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
 
 // From jsonpp11 external project in cmake
-#include <parse_to_json_class.hpp>
+#include <json/io.hpp>
+#include <json/value.hpp>
 
 #include <iostream>
 #include <sstream>
@@ -18,6 +20,9 @@
 #include <boost/coroutine2/all.hpp>
 #include <boost/iostreams/copy.hpp>
 #include <boost/regex.hpp>
+
+#define STRINGIFY2(X) #X
+#define STRINGIFY(X) STRINGIFY2(X)
 
 // Generates A-Z 0-9 over and over
 class AlphabetoSource {
@@ -62,64 +67,47 @@ int main(int argc, char *argv[]) {
   // First we need to authenticate against the RS API, before we can get the URL for all the tests
   RESTClient::JobRunner jobs;
 
-  using json::JSON;
-  using json::JMap;
+  namespace json = ciere::json;
 
-  JSON info;
+  json::value info;
   RESTClient::Headers headers{{"Content-type", "application/json"}};
+
+  RESTClient::URL syd_cf_url;
+  std::string token;
 
   auto afterLogin = [&]() {
     // Now get the sydney cloud files URL
-    const std::string &token = info["access"]["token"]["id"];
+    token = info["access"]["token"]["id"];
     std::cout << "Token: " << token << std::endl;
 
-    RESTClient::URL syd_cf_url;
 
-    const json::JList &catalog = info["access"]["serviceCatalog"];
-    for (const JMap &service : catalog)
-      if (service.at("name") == "cloudFiles") {
-        const json::JList &endpoints = service.at("endpoints");
-        for (const JMap &point : endpoints)
-          if (point.at("region") == "SYD")
-            syd_cf_url = point.at("publicURL");
-      }
+    // Find the Sydney cloud files URL
+    const json::value &catalog = info["access"]["serviceCatalog"];
+    auto cf = std::find_if(
+        catalog.begin_array(), catalog.end_array(),
+        [](auto &service) { return service["name"] == "cloudFiles"; });
+    assert(cf != catalog.end_array());
+    auto& endpoints = (*cf)["endpoints"];
+    auto ep = std::find_if(endpoints.begin_array(), endpoints.end_array(),
+                           [](auto &ep) { return ep["region"] == "SYD"; });
+    assert(ep != endpoints.end_array());
+    syd_cf_url = (*ep)["publicURL"];
 
     std::cout << "Syd URL: " << syd_cf_url << std::endl;
     headers["X-Auth-Token"] = token;
     
-    // Extract the hostname from the URL
-    boost::iterator_range<char> divider = boost::find(syd_cf_url, "://");
-    std::string::iterator hostStart = divider.end();
-    const std::string protocolTerminator = "/?";
-    const std::string hostnameTerminators = "/?";
-    const std::string pathTerminators = "/?";
-    std::string::iterator pathStart = std::find_first_of(
-        hostStart, syd_cf_url.end(), hostnameTerminators.begin(),
-        hostnameTerminators.end());
-    std::string hostname, path;
-    std::copy(hostStart, pathStart, std::back_inserter(hostname));
-    std::copy(pathStart, 
+    auto &q = jobs.queue(syd_cf_url.parts().hostname);
 
-    boost::iterator_range<char> pathStart(boost::find(divider.end(), boost::find(
-    auto part = boost::make_split_iterator(syd_cf_url, "://");
-    ++part;
-    boost::itertor_range minusProto = *part;
-    part = boost::make_split_iterator(minusProto, '/');
-    std::string hostname = 
-    boost::iterator_range afterProto = syd_cf_url
-
-    auto &q = jobs.queue(syd_cf_url);
-
-    q.emplace(RESTClient::QueuedJob{"Ensure container", syd_cf_url,
-                                    [&token](const std::string &name,
-                                             const std::string &hostname,
-                                             RESTClient::HTTP &server) {
-      // List containers
-      auto response = server.get("/");
-      std::istream &b = response.body;
-      boost::iostreams::copy(b, std::cout);
-      return true;
-    }});
+    q.emplace(RESTClient::QueuedJob{
+        "Ensure container", syd_cf_url.parts().hostname,
+        [&token](const std::string &name, const std::string &hostname,
+                 RESTClient::HTTP &server) {
+          // List containers
+          auto response = server.get("/");
+          std::istream &b = response.body;
+          boost::iostreams::copy(b, std::cout);
+          return true;
+        }});
 
     jobs.startProcessing();
 
@@ -129,19 +117,26 @@ int main(int argc, char *argv[]) {
       "Login", "https://identity.api.rackspacecloud.com/v2.0/tokens",
       [&info, &headers, &afterLogin](const std::string &name, const std::string &hostname,
               RESTClient::HTTP &conn) {
-        JSON j(JMap{{"auth", JMap{{"RAX-KSKEY:apiKeyCredentials",
-                                   JMap{{"username", RS_USERNAME},
+        /*
+        json::value j(json::value{{"auth", json::value{{"RAX-KSKEY:apiKeyCredentials",
+                                   json::value{{"username", RS_USERNAME},
                                         {"apiKey", RS_APIKEY}}}}}});
-        RESTClient::HTTPRequest request{
-            "POST", "/v2.0/tokens", headers};
-        std::ostream& putter(request.body);
+        */
+        using map = std::map<std::string, json::value>;
+        map jdata{{"auth", map{{"RAX-KSKEY:apiKeyCredentials",
+                                map{{"username", RS_USERNAME},
+                                    {"apiKey", RS_APIKEY}}}}}};
+        json::value j(jdata);
+
+        RESTClient::HTTPRequest request{"POST", "/v2.0/tokens", headers};
+        std::ostream &putter(request.body);
         putter << j;
         RESTClient::HTTPResponse response = conn.action(request);
         if (!((response.code >= 200) && (response.code < 300)))
           LOG_ERROR("Couldn't log in to RS: code("
                     << response.code << ") message (" << response.body << ")");
         std::string data(response.body);
-        info = json::readValue(data.begin(), data.end());
+        json::construct(data, info, true);
         afterLogin();
         return true;
       }});
@@ -154,15 +149,18 @@ int main(int argc, char *argv[]) {
 
   RESTClient::Services::instance().io_service.run();
 
-  // Upload then download alphabeto to cloud files
-  q.emplace({"Chunked Transmit", syd_cf_url.hostname, [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
-    // Upload
-    boost::iostream::filtering_stream<char> s;
-    s.push(AlphabetoSource(1024 * 20));
-    HTTP::Request r("POST"), 
-    // Download
+  auto &q = jobs.queue(syd_cf_url.parts().hostname);
 
+// Upload then download alphabeto to cloud files
+/*
+  q.emplace({"Chunked Transmit", syd_cf_url.parts().hostname, [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
+      // Upload
+      boost::iostreams::filtering_stream<char> s;
+      s.push(AlphabetoSource(1024 * 20));
+      RESTClient::HTTPRequest r("POST", STRINGIFY(RS_CONTAINER_NAME) "/test1"); 
+      // Download
   });
+  */
 
   return 0;
 }
