@@ -43,26 +43,6 @@ void test(const std::string &label, const T &parser) {
   EQ(out, label);
 }
 
-void testDomainLabel(const std::string& label) {
-  LOG_INFO("Testing domainlabel with " << label);
-  test(label, domainlabel);
-  // Test a bad label
-  std::string bad = label + ".com";
-  LOG_INFO("Testing domainlabel with " << bad);
-  std::string out;
-  auto begin = bad.cbegin();
-  auto end = bad.cend();
-  bool worked =
-      x3::phrase_parse(begin, end, x3::lexeme[domainlabel], x3::space, out);
-  assert(worked);
-  assert(begin != end);
-}
-
-void testTopLabel(const std::string& label) {
-  LOG_INFO("Test top label: " << label);
-  test(label, toplabel);
-}
-
 void testHostName(const std::string& label) {
   LOG_INFO("Test Hostname: " << label);
   test(label, hostname);
@@ -119,15 +99,16 @@ template <typename T> using bo = boost::optional<T>;
 void testLogin(const std::string &input, const std::string &hostname,
                boost::optional<std::string> username,
                boost::optional<std::string> password,
-               boost::optional<unsigned short> port) {
+               boost::optional<unsigned short> portToTest) {
   LOG_INFO("Test login: " << input);
   auto begin = input.cbegin();
   auto end = input.cend();
   using bos = bo<std::string>;
   using bon = bo<unsigned short>;
   using bt = bo<std::pair<std::string, std::string>>;
-  bool worked =
-      x3::phrase_parse(begin, end, x3::lexeme[login], x3::space);
+  bool worked = x3::phrase_parse(
+      begin, end, x3::lexeme[-userpass >> hostname >> -port >> host_terminator],
+      x3::space);
   assert(worked);
   if (begin != end) {
     std::string compare_to;
@@ -163,7 +144,7 @@ void testHostInfo(const std::string &input, const std::string &protocol,
   auto end = input.cend();
   RESTClient::HostInfo out;
   bool worked =
-      x3::phrase_parse(begin, end, hostInfo_def, x3::space, out);
+      x3::phrase_parse(begin, end, lexeme[hostinfo], x3::space, out);
   assert(worked);
   if (begin != end) {
     std::string compare_to;
@@ -173,16 +154,23 @@ void testHostInfo(const std::string &input, const std::string &protocol,
         << std::endl << "copyd: " << compare_to << std::endl;
     throw runtime_error(msg.str());
   }
+  using namespace std;
+
+  cout << "protocol: "
+       << "(" << out.protocol << ") - (" << protocol << ")" << endl
+       << "hostname: "
+       << "(" << out.hostname << ") - (" << hostname << ")" << endl
+       << "username: "
+       << "(" << out.username << ") - (" << username << ")" << endl
+       << "password: "
+       << "(" << out.password << ") - (" << password << ")" << endl << "port: "
+       << "(" << out.getPort() << ") - (" << port << ")" << endl;
+
   EQ(out.protocol, protocol);
   EQ(out.hostname, hostname);
-  EQ(out.password, password);
   EQ(out.username, username);
+  EQ(out.password, password);
   EQ(out.getPort(), port);
-}
-
-void testUser(const std::string label) {
-  LOG_INFO("Test User: " << label);
-  test(label, user_string);
 }
 
 void testUserPass(const std::string &label, const std::string &username,
@@ -213,12 +201,12 @@ void testUserPass(const std::string &label, const std::string &username,
 
 int main(int , char**)
 {
-  testDomainLabel("somewhere");
-  testDomainLabel("s");
-  testDomainLabel("s-aw");
-  testDomainLabel("s-w");
+  testHostName("somewhere");
+  testHostName("s");
+  testHostName("s-aw");
+  testHostName("s-w");
 
-  testTopLabel("com");
+  testHostName("com");
 
   testHostName("some.host.com");
   testHostName("somewhere");
@@ -229,10 +217,10 @@ int main(int , char**)
   testHostPort("somewhere.com:8000", "somewhere.com", 8000);
   testHostPort("123.100.200.300:65000", "123.100.200.300", 65000);
 
-  testUser("mister");
-  testUser(";?&=mister");
-  testUserPass("mister", "mister", {});
-  testUserPass("Doctor:who", "Doctor", "who");
+  testUserPass("mister@", "mister");
+  testUserPass(";&=?mister@", ";&=?mister");
+  testUserPass("mister@", "mister", {});
+  testUserPass("Doctor:who@", "Doctor", "who");
 
   testLogin("other-host.com", "other-host.com", {}, {}, {});
   testLogin("somewhere:8080", "somewhere", {}, {}, 8080);
@@ -259,7 +247,7 @@ int main(int , char**)
   std::string query("?a=1&b=2");
   LOG_INFO("Testing query string: " << query);
   QueryParameters params;
-  x3::phrase_parse(query.begin(), query.end(), lexeme[query_def], x3::space,
+  x3::phrase_parse(query.begin(), query.end(), lexeme[query_string], x3::space,
                    params);
   EQ(params.size(), 2);
   EQ(params.at("a"), "1");

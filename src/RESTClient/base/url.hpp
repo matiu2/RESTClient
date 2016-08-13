@@ -20,11 +20,11 @@ struct HostInfo {
   boost::optional<unsigned int> port;
   unsigned int getPort() const {
     if (port)
-      return port.value();
+      return port.get();
     else
-      return is_ssl();
+      return is_ssl() ? 443 : 80;
   }
-  bool is_ssl() const { return (protocol == "https") ? 443 : 80; }
+  bool is_ssl() const { return (protocol == "https") ? true : false; }
   operator std::string() const {
     std::string result = protocol + "://";
     if ((!username.empty()) || (!password.empty()))
