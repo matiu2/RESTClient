@@ -13,7 +13,6 @@ using namespace boost::spirit::x3;
 class quoted_char_tag;
 class path_tag;
 class user_or_pass_tag;
-class userpass_tag;
 
 // Rules
 rule<quoted_char_tag, char> const quoted_char = "quoted_char";
@@ -27,7 +26,7 @@ auto const host_terminator = lit('?') | '/' | eoi;
 auto const host_terminator_all = host_terminator | &port;
 auto const hostname = +~char_("?/:");
 auto const quoted_char_def = '%' >> hex;
-auto const path_def = char_('/') >> +(~char_("?%") | quoted_char) >> &(eol | '?');
+auto const path_def = char_('/') >> +(~char_("?%") | quoted_char) >> &(eoi | '?');
 
 // userpass
 auto const user_or_pass_def = +~char_(":@") >> !host_terminator_all;
@@ -40,11 +39,12 @@ auto const query_pair =
         query_word >> '=' >> query_word;
 auto const query_string =
     rule<class query_string_tag, std::map<std::string, std::string>>() =
-        lit('?') >> (query_pair % '&');
+        lit('?') >> -(query_pair % '&');
 
-auto const hostport = hostname >> -port >> host_terminator;
-auto const hostinfo = lexeme[protocol >> "://" >> -userpass >> hostport];
-auto const url = lexeme[-path >> -query_string];
+auto const hostport = hostname >> -port >> &host_terminator;
+auto const hostinfo = protocol >> "://" >> -userpass >> hostport;
+auto const pathquery = -path >> -query_string;
+auto const url = hostinfo >> pathquery;
 
 // Binding
 BOOST_SPIRIT_DEFINE(quoted_char, path, user_or_pass);

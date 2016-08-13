@@ -154,18 +154,6 @@ void testHostInfo(const std::string &input, const std::string &protocol,
         << std::endl << "copyd: " << compare_to << std::endl;
     throw runtime_error(msg.str());
   }
-  using namespace std;
-
-  cout << "protocol: "
-       << "(" << out.protocol << ") - (" << protocol << ")" << endl
-       << "hostname: "
-       << "(" << out.hostname << ") - (" << hostname << ")" << endl
-       << "username: "
-       << "(" << out.username << ") - (" << username << ")" << endl
-       << "password: "
-       << "(" << out.password << ") - (" << password << ")" << endl << "port: "
-       << "(" << out.getPort() << ") - (" << port << ")" << endl;
-
   EQ(out.protocol, protocol);
   EQ(out.hostname, hostname);
   EQ(out.username, username);
@@ -243,6 +231,14 @@ int main(int , char**)
 
   testQueryWord("abc");
   testQueryPair("abc=123");
+
+  std::string path1("/some/where");
+  LOG_INFO("Testing Path: " << path1);
+  test(path1, path);
+
+  path1 = "/some/where/";
+  LOG_INFO("Testing Path: " << path1);
+  test(path1, path);
 
   std::string query("?a=1&b=2");
   LOG_INFO("Testing query string: " << query);
