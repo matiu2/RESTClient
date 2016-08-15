@@ -12,7 +12,7 @@ using JobFunction = std::function<
 
 struct QueuedJob {
   std::string name;
-  const HostInfo& hostInfo;
+  HostInfo hostInfo;
   JobFunction work;
   bool operator()(HTTP &server) const {
     return work(name, hostInfo, server);

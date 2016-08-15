@@ -80,7 +80,6 @@ int main(int argc, char *argv[]) {
     token = info["access"]["token"]["id"];
     std::cout << "Token: " << token << std::endl;
 
-
     // Find the Sydney cloud files URL
     const json::value &catalog = info["access"]["serviceCatalog"];
     auto cf = std::find_if(
@@ -96,10 +95,10 @@ int main(int argc, char *argv[]) {
     std::cout << "Syd URL: " << syd_cf_url << std::endl;
     headers["X-Auth-Token"] = token;
     
-    auto &q = jobs.queue(syd_cf_url.parts().hostname);
+    auto &q = jobs.queue(syd_cf_url.hostname());
 
     q.emplace(RESTClient::QueuedJob{
-        "Ensure container", syd_cf_url.parts().hostname,
+        "Ensure container", syd_cf_url.hostname(),
         [&token](const std::string &name, const std::string &hostname,
                  RESTClient::HTTP &server) {
           // List containers
@@ -113,12 +112,15 @@ int main(int argc, char *argv[]) {
 
   };
 
-  jobs.queue("https://identity.api.rackspacecloud.com").emplace(RESTClient::QueuedJob{
-      "Login", "https://identity.api.rackspacecloud.com/v2.0/tokens",
-      [&info, &headers, &afterLogin](const std::string &name, const std::string &hostname,
-              RESTClient::HTTP &conn) {
+  RESTClient::HostInfo login_host("https://identity.api.rackspacecloud.com");
+  jobs.queue(login_host).emplace(RESTClient::QueuedJob{
+      "Login", login_host,
+      [&info, &headers, &afterLogin](const std::string &name,
+                                     const std::string &hostname,
+                                     RESTClient::HTTP &conn) {
         /*
-        json::value j(json::value{{"auth", json::value{{"RAX-KSKEY:apiKeyCredentials",
+        json::value j(json::value{{"auth",
+        json::value{{"RAX-KSKEY:apiKeyCredentials",
                                    json::value{{"username", RS_USERNAME},
                                         {"apiKey", RS_APIKEY}}}}}});
         */
@@ -143,17 +145,14 @@ int main(int argc, char *argv[]) {
 
   jobs.startProcessing();
 
-  RESTClient::Services::instance().io_service.run();
-
-  jobs.startProcessing();
-
-  RESTClient::Services::instance().io_service.run();
-
-  auto &q = jobs.queue(syd_cf_url.parts().hostname);
+  while (jobs.count() > 0) {
+    RESTClient::Services::instance().io_service.run();
+    jobs.startProcessing();
+  }
 
 // Upload then download alphabeto to cloud files
 /*
-  q.emplace({"Chunked Transmit", syd_cf_url.parts().hostname, [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
+  q.emplace({"Chunked Transmit", syd_cf_url.hostname(), [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
       // Upload
       boost::iostreams::filtering_stream<char> s;
       s.push(AlphabetoSource(1024 * 20));

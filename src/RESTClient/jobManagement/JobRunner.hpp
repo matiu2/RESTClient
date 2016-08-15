@@ -25,6 +25,7 @@ private:
 public:
   JobQueue &queue(const HostInfo &hostInfo);
   void startProcessing(size_t connectionsPerHost = 4);
+  size_t count() const { return queues.size(); }
 };
 
 } /* RESTClient */
