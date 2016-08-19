@@ -22,12 +22,9 @@ public:
       : connection(connection), yield(yield) {}
   std::streamsize write(const char *s, std::streamsize n) {
     LOG_TRACE("OutputToNet writing: " << n);
-    LOG_TRACE("Entering write");
-    boost::system::error_code code;
     size_t result = asio::async_write(connection, asio::buffer(s, n),
-                                      asio::transfer_all(), yield[code]);
-    LOG_TRACE("Exiting write: " << result << " - code: " << code);
-    //LOG_TRACE("Returning that we wrote " << result << " out of " << n);
+                                      asio::transfer_all(), yield);
+    LOG_TRACE("Returning that we wrote " << result << " out of " << n);
     return result;
   }
 };

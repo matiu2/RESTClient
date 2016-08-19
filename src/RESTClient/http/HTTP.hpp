@@ -70,7 +70,7 @@ public:
   HTTPResponse action(HTTPRequest& request, std::string filePath="");
   // Get a resource from the server. Path is the part after the URL.
   // eg. get("/person/1"); would get http://httpbin.org/person/1
-  HTTPResponse get(std::string path);
+  HTTPResponse get(std::string path, Headers headers = {});
   HTTPResponse getToFile(std::string serverPath, const std::string& filePath);
   HTTPResponse del(std::string path);
   HTTPResponse put(std::string path, std::string data);

@@ -109,11 +109,14 @@ int main(int argc, char *argv[]) {
         syd_cf_url.protocol() + "://" + syd_cf_url.hostname(),
         [&token, &syd_cf_url](const std::string &name,
                               const std::string &hostname,
-                              RESTClient::HTTP &server) {
-          LOG_TRACE("afterLogin: running listing containers.: "
-                    << (syd_cf_url.protocol() + "://" + syd_cf_url.hostname()));
+                              RESTClient::HTTP &conn) {
+          LOG_INFO("afterLogin: running listing containers.: " << (syd_cf_url));
+          // Add the token
           // List containers
-          auto response = server.get("/");
+          RESTClient::HTTPRequest req("GET", syd_cf_url.path() + "/");
+          conn.addDefaultHeaders(req);
+          req.headers["X-Auth-Token"] = token;
+          auto response = conn.action(req);
           std::istream &b = response.body;
           boost::iostreams::copy(b, std::cout);
           return true;

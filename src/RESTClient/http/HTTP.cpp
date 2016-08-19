@@ -139,7 +139,6 @@ HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
 }
 
 void HTTP::readHTTPReply(HTTPResponse &result) {
-  output.strict_sync();
   if (hostInfo.is_ssl())
     RESTClient::readHTTPReply(result, yield, sslStream,
                               std::bind(&HTTP::close, this));
@@ -181,8 +180,8 @@ void HTTP::ensureConnection() {
   makeOutput();
 }
 
-HTTPResponse HTTP::get(std::string path) {
-  HTTPRequest request("GET", path);
+HTTPResponse HTTP::get(std::string path, Headers headers) {
+  HTTPRequest request("GET", path, headers);
   return action(request);
 }
 
