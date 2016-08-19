@@ -39,7 +39,6 @@ private:
   const HostInfo& hostInfo;
   Services& services;
   asio::yield_context yield;
-  bool is_ssl;
   ssl::context ssl_context;
   // Needs to be a unique_ptr, because ssl::stream has no copy and no move
   // powerz, but we want to be able to move HTTP instances

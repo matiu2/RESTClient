@@ -127,19 +127,22 @@ HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
   for (const auto &header : request.headers)
     output << header.first << ": " << header.second << "\r\n";
   output << "\r\n";
-  output.flush();
 
   HTTPResponse result;
   if (!filePath.empty())
     result.body.initWithFile(filePath);
   transmitBody(output, request, yield);
 
+  LOG_INFO("Flushing output");
+  output.flush();
+  LOG_INFO("Reading reply");
   readHTTPReply(result);
 
   return result;
 }
 
 void HTTP::readHTTPReply(HTTPResponse &result) {
+  output.strict_sync();
   if (hostInfo.is_ssl())
     RESTClient::readHTTPReply(result, yield, sslStream,
                               std::bind(&HTTP::close, this));
@@ -257,7 +260,7 @@ void HTTP::makeOutput() {
 #ifdef HTTP_ON_STD_OUT
   output.push(CopyOutgoingToCout());
 #endif
-  if (is_ssl)
+  if (hostInfo.is_ssl())
     output.push(make_output_to_net(sslStream, yield));
   else
     output.push(make_output_to_net(socket, yield));
@@ -274,7 +277,7 @@ HTTPResponse HTTP::postStream(std::string path, std::istream &data) {
 // HTTPResponse HTTP::patch(const std::string path, std::string data);
 
 bool HTTP::is_open() const {
-  if (is_ssl)
+  if (hostInfo.is_ssl())
     return sslStream.lowest_layer().is_open();
   else
     return socket.is_open();
