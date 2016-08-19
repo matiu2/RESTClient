@@ -29,6 +29,7 @@ class AlphabetoSource {
 public:
   using char_type = char;
   using category = boost::iostreams::source_tag;
+
 private:
   using coro_t = boost::coroutines2::coroutine<char>;
   static void _generator(coro_t::push_type &sink) {
@@ -44,6 +45,7 @@ private:
   coro_t::pull_type generator;
   std::streamsize limit;
   std::streamsize transmitted;
+
 public:
   AlphabetoSource(size_t limit)
       : generator(AlphabetoSource::_generator), limit(limit), transmitted(0) {}
@@ -64,7 +66,8 @@ int main(int argc, char *argv[]) {
 
   std::vector<RESTClient::QueuedJob> tests;
 
-  // First we need to authenticate against the RS API, before we can get the URL for all the tests
+  // First we need to authenticate against the RS API, before we can get the URL
+  // for all the tests
   RESTClient::JobRunner jobs;
 
   namespace json = ciere::json;
@@ -77,8 +80,9 @@ int main(int argc, char *argv[]) {
 
   auto afterLogin = [&]() {
     // Now get the sydney cloud files URL
+    LOG_TRACE("afterLogin running");
     token = info["access"]["token"]["id"];
-    std::cout << "Token: " << token << std::endl;
+    LOG_TRACE("afterLogin: token" << token);
 
     // Find the Sydney cloud files URL
     const json::value &catalog = info["access"]["serviceCatalog"];
@@ -86,31 +90,35 @@ int main(int argc, char *argv[]) {
         catalog.begin_array(), catalog.end_array(),
         [](auto &service) { return service["name"] == "cloudFiles"; });
     assert(cf != catalog.end_array());
-    auto& endpoints = (*cf)["endpoints"];
+    auto &endpoints = (*cf)["endpoints"];
     auto ep = std::find_if(endpoints.begin_array(), endpoints.end_array(),
                            [](auto &ep) { return ep["region"] == "SYD"; });
     assert(ep != endpoints.end_array());
     syd_cf_url = (*ep)["publicURL"];
 
-    std::cout << "Syd URL: " << syd_cf_url << std::endl;
+    LOG_TRACE("Syd URL: " << syd_cf_url)
+
     headers["X-Auth-Token"] = token;
 
     auto &q = jobs.queue(syd_cf_url.protocol() + "://" + syd_cf_url.hostname());
 
+    LOG_TRACE("afterLogin: Queuing new job : "
+              << (syd_cf_url.protocol() + "://" + syd_cf_url.hostname()));
     q.emplace(RESTClient::QueuedJob{
         "Ensure container",
         syd_cf_url.protocol() + "://" + syd_cf_url.hostname(),
-        [&token](const std::string &name, const std::string &hostname,
-                 RESTClient::HTTP &server) {
+        [&token, &syd_cf_url](const std::string &name,
+                              const std::string &hostname,
+                              RESTClient::HTTP &server) {
+          LOG_TRACE("afterLogin: running listing containers.: "
+                    << (syd_cf_url.protocol() + "://" + syd_cf_url.hostname()));
           // List containers
           auto response = server.get("/");
           std::istream &b = response.body;
           boost::iostreams::copy(b, std::cout);
           return true;
         }});
-
-    jobs.startProcessing();
-
+    LOG_TRACE("afterLogin: New queue size: " << q.size());
   };
 
   RESTClient::HostInfo login_host("https://identity.api.rackspacecloud.com");
@@ -144,23 +152,20 @@ int main(int argc, char *argv[]) {
         return true;
       }});
 
-  jobs.startProcessing();
+  jobs.run();
 
-  while (jobs.count() > 0) {
-    RESTClient::Services::instance().io_service.run();
-    jobs.startProcessing();
-  }
-
-// Upload then download alphabeto to cloud files
-/*
-  q.emplace({"Chunked Transmit", syd_cf_url.hostname(), [&token](const std::string& name, const std::string& hostname, RESTClient::HTTP& server){
-      // Upload
-      boost::iostreams::filtering_stream<char> s;
-      s.push(AlphabetoSource(1024 * 20));
-      RESTClient::HTTPRequest r("POST", STRINGIFY(RS_CONTAINER_NAME) "/test1"); 
-      // Download
-  });
-  */
+  // Upload then download alphabeto to cloud files
+  /*
+    q.emplace({"Chunked Transmit", syd_cf_url.hostname(), [&token](const
+    std::string& name, const std::string& hostname, RESTClient::HTTP& server){
+        // Upload
+        boost::iostreams::filtering_stream<char> s;
+        s.push(AlphabetoSource(1024 * 20));
+        RESTClient::HTTPRequest r("POST", STRINGIFY(RS_CONTAINER_NAME)
+    "/test1");
+        // Download
+    });
+    */
 
   return 0;
 }

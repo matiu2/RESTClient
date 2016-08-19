@@ -220,8 +220,6 @@ int main(int argc, char *argv[]) {
       jobs.queue(job.hostInfo).emplace(std::move(job));
   }
 
-  jobs.startProcessing();
-
-  RESTClient::Services::instance().io_service.run();
+  jobs.run();
   return 0;
 }

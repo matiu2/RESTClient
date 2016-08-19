@@ -24,8 +24,7 @@ private:
   std::map<HostInfo, JobQueue> queues;
 public:
   JobQueue &queue(const HostInfo &hostInfo);
-  void startProcessing(size_t connectionsPerHost = 4);
-  size_t count() const { return queues.size(); }
+  void run(size_t connectionsPerHost = 4);
 };
 
 } /* RESTClient */
