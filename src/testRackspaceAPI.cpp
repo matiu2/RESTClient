@@ -113,10 +113,8 @@ int main(int argc, char *argv[]) {
           LOG_INFO("afterLogin: running listing containers.: " << (syd_cf_url));
           // Add the token
           // List containers
-          RESTClient::HTTPRequest req("GET", syd_cf_url.path() + "/");
-          conn.addDefaultHeaders(req);
-          req.headers["X-Auth-Token"] = token;
-          auto response = conn.action(req);
+          auto response =
+              conn.get(syd_cf_url.path() + "/", {{"X-Auth-Token", token}});
           std::istream &b = response.body;
           boost::iostreams::copy(b, std::cout);
           return true;
