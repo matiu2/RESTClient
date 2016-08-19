@@ -13,18 +13,20 @@ using namespace boost::spirit::x3;
 class quoted_char_tag;
 class path_tag;
 class user_or_pass_tag;
+class hostname_tag;
 
 // Rules
 rule<quoted_char_tag, char> const quoted_char = "quoted_char";
 rule<path_tag, std::string> const path = "path";
 rule<user_or_pass_tag, std::string> const user_or_pass = "user_or_pass";
+rule<hostname_tag, std::string> const hostname = "hostname";
 
 // Parsers
 auto const protocol = string("https") | string("http");
 auto const port = lit(':') >> ushort_;
 auto const host_terminator = lit('?') | '/' | eoi;
 auto const host_terminator_all = host_terminator | &port;
-auto const hostname = +~char_("?/:");
+auto const hostname_def = +~char_("?/:");
 auto const quoted_char_def = '%' >> hex;
 auto const path_def = char_('/') >> +(~char_("?%") | quoted_char) >> &(eoi | '?');
 
@@ -47,6 +49,6 @@ auto const pathquery = -path >> -query_string;
 auto const url = hostinfo >> pathquery;
 
 // Binding
-BOOST_SPIRIT_DEFINE(quoted_char, path, user_or_pass);
+BOOST_SPIRIT_DEFINE(quoted_char, path, user_or_pass, hostname);
 
 } /* RESTClient */

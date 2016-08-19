@@ -133,9 +133,6 @@ HTTPResponse HTTP::action(HTTPRequest &request, std::string filePath) {
     result.body.initWithFile(filePath);
   transmitBody(output, request, yield);
 
-  LOG_INFO("Flushing output");
-  output.flush();
-  LOG_INFO("Reading reply");
   readHTTPReply(result);
 
   return result;

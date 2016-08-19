@@ -66,17 +66,7 @@ void readHTTPReply(HTTPResponse &result, asio::yield_context &yield,
   // Reads the headers into the result
   asio::streambuf buf;
   LOG_TRACE("readHTTPReply read headers (yield)")
-  std::string s;
-  while (s.find("\r\n\r\n") == std::string::npos) {
-    LOG_TRACE("Downloading some");
-    boost::asio::streambuf::mutable_buffers_type out = buf.prepare(1);
-    auto bytes_read = connection.async_read_some(out, yield);
-    LOG_TRACE("Got " << bytes_read << " bytes");
-    boost::asio::buffer_copy(out, boost::asio::buffer(s));
-    LOG_TRACE("<" << s << ">");
-  }
-  LOG_TRACE("GOT HEADERS");
-  //asio::async_read_until(connection, buf, "\r\n\r\n", yield);
+  asio::async_read_until(connection, buf, "\r\n\r\n", yield);
   std::istream data(&buf);
   data.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 

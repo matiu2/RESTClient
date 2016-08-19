@@ -290,7 +290,19 @@ int main(int , char**)
   EQ(megaTest2.port(), 9000);
   EQ(megaTest2.path(), "/some/path");
   EQ(megaTest2.queryParameters().size(), 0);
-
   LOG_INFO("Mega Test 2 - PASSED");
+
+  std::string megaTest3_s("https://storage101.syd2.clouddrive.com/v1/MossoCloudFS_80061398-2f83-433e-a3fe-ef0ea28a34c5");
+  LOG_INFO("Mega Test 3: " << megaTest3_s);
+  URL megaTest3(megaTest3_s);
+  EQ(megaTest3.protocol(), "https");
+  EQ(megaTest3.username(), "");
+  EQ(megaTest3.password(), "");
+  EQ(megaTest3.hostname(), "storage101.syd2.clouddrive.com");
+  EQ(megaTest3.port(), 443);
+  EQ(megaTest3.path(), "/v1/MossoCloudFS_80061398-2f83-433e-a3fe-ef0ea28a34c5");
+  EQ(megaTest3.queryParameters().size(), 0);
+  LOG_INFO("Mega Test 3 - PASSED");
+
   return 0;
 }

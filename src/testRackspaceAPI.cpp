@@ -94,11 +94,12 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Syd URL: " << syd_cf_url << std::endl;
     headers["X-Auth-Token"] = token;
-    
-    auto &q = jobs.queue(syd_cf_url.hostname());
+
+    auto &q = jobs.queue(syd_cf_url.protocol() + "://" + syd_cf_url.hostname());
 
     q.emplace(RESTClient::QueuedJob{
-        "Ensure container", syd_cf_url.hostname(),
+        "Ensure container",
+        syd_cf_url.protocol() + "://" + syd_cf_url.hostname(),
         [&token](const std::string &name, const std::string &hostname,
                  RESTClient::HTTP &server) {
           // List containers
