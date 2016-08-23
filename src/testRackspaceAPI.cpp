@@ -116,7 +116,15 @@ int main(int argc, char *argv[]) {
           auto response =
               conn.get(syd_cf_url.path() + "/", {{"X-Auth-Token", token}});
           std::istream &b = response.body;
-          boost::iostreams::copy(b, std::cout);
+          std::vector<std::string> containers;
+          while (b.good()) {
+            std::string line;
+            getline(b, line);
+            if (!line.empty()) {
+              LOG_INFO("CONTAINER: " << line);
+              containers.emplace_back(std::move(line));
+            }
+          }
           return true;
         }});
     LOG_TRACE("afterLogin: New queue size: " << q.size());

@@ -71,3 +71,4 @@ endif(${BUILD_TESTS})
 
 add_subdirectory(src)
 add_subdirectory(experiments)
+add_subdirectory(examples)
