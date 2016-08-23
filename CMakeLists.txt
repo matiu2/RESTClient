@@ -39,7 +39,7 @@ if (${BUILD_TESTS} AND ${BUILD_RS_TESTS})
 endif()
 
 # extra definitions
-add_definitions(-DMIN_LOG_LEVEL=${MIN_LOG_LEVEL})
+add_definitions(-DMIN_LOG_LEVEL=LOG_LEVEL_${MIN_LOG_LEVEL})
 
 if (${LOG_LOCATION})
 add_definitions(-DLOG_LOCATION=1)

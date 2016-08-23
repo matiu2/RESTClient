@@ -47,7 +47,9 @@ void queueWorker(const HostInfo &host_info, std::queue<QueuedJob> &jobs) {
                  << job.name);
       }
     }
+    LOG_TRACE("queueWorker: (" << myId << ") - Closing connection: " << conn_info);
     conn.close();
+    LOG_TRACE("queueWorker: (" << myId << ") - Connection closed: " << conn_info);
   });
 }
 

@@ -8,6 +8,7 @@
 #include <RESTClient/http/Services.hpp>
 #include <RESTClient/jobManagement/JobRunner.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
+#include <boost/range/algorithm/find.hpp>
 
 // From jsonpp11 external project in cmake
 #include <json/io.hpp>
@@ -107,9 +108,9 @@ int main(int argc, char *argv[]) {
     q.emplace(RESTClient::QueuedJob{
         "Ensure container",
         syd_cf_url.protocol() + "://" + syd_cf_url.hostname(),
-        [&token, &syd_cf_url](const std::string &name,
-                              const std::string &hostname,
-                              RESTClient::HTTP &conn) {
+        [&token, &syd_cf_url, &headers](const std::string &name,
+                                        const std::string &hostname,
+                                        RESTClient::HTTP &conn) {
           LOG_INFO("afterLogin: running listing containers.: " << (syd_cf_url));
           // Add the token
           // List containers
@@ -124,6 +125,16 @@ int main(int argc, char *argv[]) {
               LOG_INFO("CONTAINER: " << line);
               containers.emplace_back(std::move(line));
             }
+          }
+          // Find if our container exists
+          const std::string container_name = "matt.sherborne.RESTClient.test.tmp";
+          auto found = boost::range::find(containers, container_name);
+          if (found == containers.end()) {
+            // If not found, create this container
+            RESTClient::HTTPRequest request{
+                "PUT", syd_cf_url.path() + "/" + container_name, headers};
+            RESTClient::HTTPResponse response = conn.action(request);
+            LOG_INFO("Container created");
           }
           return true;
         }});
