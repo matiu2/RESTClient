@@ -35,7 +35,8 @@ void queueWorker(const HostInfo &host_info, std::queue<QueuedJob> &jobs) {
                                    << " - " << job.name);
         job(conn);
         LOG_DEBUG("queueWorker: (" << myId << ") - Job Completed: " << conn_info
-                                   << " - " << job.name);
+                                   << " connections still open? "
+                                   << conn.is_open() << " - " << job.name);
       } catch (std::exception &e) {
         LOG_WARN("queueWorker: (" << myId << ") - Job (" << job.name
                                   << ") - host (" << conn_info
@@ -47,9 +48,10 @@ void queueWorker(const HostInfo &host_info, std::queue<QueuedJob> &jobs) {
                  << job.name);
       }
     }
-    LOG_TRACE("queueWorker: (" << myId << ") - Closing connection: " << conn_info);
+    // Hang up
+    LOG_TRACE("queueWorker: (" << myId
+                               << ") - Closing connection: " << conn_info);
     conn.close();
-    LOG_TRACE("queueWorker: (" << myId << ") - Connection closed: " << conn_info);
   });
 }
 

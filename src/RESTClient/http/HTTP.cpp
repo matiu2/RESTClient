@@ -12,6 +12,7 @@
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/asio/connect.hpp>
+#include <boost/asio/error.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/restrict.hpp>
 #include <boost/lexical_cast.hpp>
@@ -284,14 +285,42 @@ void HTTP::close() {
     boost::system::error_code ec;
     sslStream.async_shutdown(yield[ec]);
     sslStream.lowest_layer().close();
-    // Short read is not a real error. Everything else is.
-    if (ec.category() == asio::error::get_ssl_category() &&
-        ec.value() == ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ))
+    LOG_DEBUG("SSH Shutdown 1: " << ec.category().name() << " - " << ec.value()
+                                 << " - " << ec.category().message(ec.value()));
+    using asio::error::misc_errors;
+    using asio::error::basic_errors;
+    const auto &misc_cat = asio::error::get_misc_category();
+    const auto &ssl_cat = asio::error::get_ssl_category();
+    // This error means the remote party has initiated has already closed the
+    // underlying transport (TCP FIN) without shutting down the SSL.
+    // It may be a truncate attack attempt, but nothing we can do about it
+    // except close the connection.
+    if (ec.category() == ssl_cat &&
+        ec.value() == ERR_PACK(ERR_LIB_SSL, 0, SSL_R_SHORT_READ)) {
+      LOG_DEBUG("SSL Shutdown - remote party just dropped TCP FIN instead of "
+                "closing SSL protocol. Possible truncate attack - closing "
+                "connection.")
       return;
+    }
+    // We are the first one to run ssl_shutdown, and remote party responded in
+    // kind, just continue
+    if (ec.category() == misc_cat && ec.value() == misc_errors::eof) {
+      return;
+    }
+    // The remote party sent ssl_shutdown, then just dropped the connection
+    if (ec.category() == misc_cat &&
+        ec.value() == basic_errors::operation_aborted) {
+      return;
+    }
+    // Everything went as planned
     if (ec.category() == boost::system::system_category() &&
-        ec.value() == boost::system::errc::success)
+        ec.value() == boost::system::errc::success) {
       return;
-    throw boost::system::system_error(ec);
+    }
+    // Something scary happened, log an error (throw an exception too)
+    LOG_ERROR("Unabled to shutdown SSL connection: "
+              << ec.category().name() << " (" << ec.value() << ") "
+              << ec.category().message(ec.value()));
   } else if (socket.is_open()) {
     socket.close();
   }
